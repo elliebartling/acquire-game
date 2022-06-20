@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.label {
+    @apply block text-sm font-medium text-gray-700;
+}
+
+.input {
+    @apply shadow-sm block w-full border-gray-300 rounded-md px-2 py-2;
+}
+
+nav a.router-link-active {
+    @apply bg-gray-900 text-white;
+}
+
+body {
+    @apply bg-slate-100;
+}
+
+h1 {
+    @apply text-2xl font-bold;
+}
+
+h2 {
+    @apply text-xl font-bold;
+}
