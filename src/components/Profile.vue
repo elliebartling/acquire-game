@@ -1,39 +1,65 @@
 <template>
-  <form class="form-widget" @submit.prevent="">
+  <form class="form-widget py-6 space-y-4" @submit.prevent="authStore.updateUserProfile(this.profile)">
     <div>
-      <label for="email">Email</label>
-      <!-- <input id="email" type="text" :value="store.user.email" disabled /> -->
+      <label class="label" for="email">Email</label>
+      <input id="email" class="input text-gray-500" type="text" :value="user.email" disabled />
+      <p class="mt-2 text-sm text-gray-500">You can't change your email address after signing up, but you can see what it is here.</p>
     </div>
     <div>
-      <label for="username">Name</label>
-      <!-- <input id="username" type="text" v-model="username" /> -->
-    </div>
-    <div>
-      <label for="website">Website</label>
-      <!-- <input id="website" type="website" v-model="website" /> -->
+      <label class="label" for="username">Username</label>
+      <input id="username" class="input" v-model="profile.username" type="text" />
+      <p class="mt-2 text-sm text-gray-500">A username is required to continue.</p>
     </div>
 
-    <div>
+    <!-- <AvatarUpload v-model:path="profile.avatar_url" @upload="authStore.updateUserProfile(profile)" /> -->
+
+    <div class="flex flex-row gap-4">
       <input
         type="submit"
-        class="button block primary"
+        class="button block primary cursor-pointer hover:bg-violet-600"
         :value="loading ? 'Loading ...' : 'Update'"
         :disabled="loading"
       />
-    </div>
-
-    <div>
-      <button class="button block" @click="signOut" :disabled="loading">
+      <button class="button block secondary hover:bg-violet-600 hover:text-white" @click="authStore.signOut()" :disabled="loading">
         Sign Out
       </button>
     </div>
   </form>
+    <code class="bg-gray-900 block rounded text-xs p-4 mt-4 text-white mt-2">
+        <pre>
+            {{ user }}
+        </pre>
+    </code>
 </template>
 
 <script>
-import { supabase } from "../supabase"
-import { useAuthStore } from "../stores/auth"
-import { onMounted, ref } from "vue"
+ import { supabase } from "../supabase"
+ import { useAuthStore } from '../stores/auth'
+ import AvatarUpload from '../components/AvatarUpload.vue'
+
+    export default {
+        setup() {
+            const authStore = useAuthStore()
+
+            let loading = false
+            let profile = {
+              username: '',
+              avatar_url: ''
+            }
+
+            return { loading, authStore }
+        },
+        props: ['profile'],
+        components: {AvatarUpload},
+        computed: {
+            user() {
+              return useAuthStore().user
+            }
+        },
+        mounted() {
+          // this.profile.username = this.authStore.user.profile.username
+        }
+    }
 
 // export default {
 //   setup() {

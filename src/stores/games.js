@@ -20,8 +20,32 @@ export const useGamesStore = defineStore({
         let { data: games, error } = await supabase
             .from('games')
             .select('*')
+            // .gte('created_at', 'Greater than or equal to')
+            .order('created_at', { ascending: false })
         
-            this.all = games
+        this.all = games
+        this.listenForNewGames()
+    },
+    listenForNewGames() {
+      const gameSubscription = supabase
+        .from('games')
+        .on('INSERT', payload => {
+          console.log('New games received!', payload)
+          this.all.unshift(payload.new)
+        })
+        .subscribe()
+      
+    },
+    async playMove(game, move) {
+
+    },
+    async createNewGame(settings) {
+      console.log(settings)
+      let { data, error } = await supabase
+        .from('games')
+        .insert(settings)
+      
+      if (error) throw error 
     }
   }
 })

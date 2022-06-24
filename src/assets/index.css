@@ -7,7 +7,7 @@
 }
 
 .input {
-    @apply shadow-sm block w-full border-gray-300 rounded-md px-2 py-2;
+    @apply shadow-sm block w-full border-gray-300 border rounded-md px-2 py-2;
 }
 
 nav a.router-link-active {
@@ -24,4 +24,20 @@ h1 {
 
 h2 {
     @apply text-xl font-bold;
+}
+
+.button {
+    @apply px-4 py-2 rounded;
+}
+
+.button.primary {
+    @apply border border-violet-500 bg-violet-500 text-white;
+}
+
+.button.secondary {
+    @apply border border-violet-500 text-violet-500;
+}
+
+.button.button-sm {
+    @apply text-sm px-3 py-2;
 }

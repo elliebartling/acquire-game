@@ -4,7 +4,7 @@ import { supabase } from '@/supabase'
 export const usePlayersStore = defineStore({
   id: 'players',
   state: () => ({
-    all: []
+    all: [],
   }),
   getters: {
     allPlayers(state) {
