@@ -11,6 +11,7 @@ import Profile from "./components/Profile.vue"
 import Nav from "./components/Nav.vue"
 import ProfileView from './views/ProfileView.vue'
 import SetUpProfileView from './views/SetUpProfileView.vue'
+import { Suspense } from 'vue'
 
 const authStore = useAuthStore()
 authStore.loadUser()
@@ -53,7 +54,9 @@ players.loadAllPlayers()
 
 <template>
   <Nav :user="authStore.user" />
-  <RouterView v-if="authStore.user && authStore.user.profile" />
+  <Suspense v-if="authStore.user && authStore.user.profile">
+    <RouterView />
+  </Suspense>
   <SetUpProfileView v-else-if="authStore.user && !authStore.user.profile" />
   <Auth v-else />
 </template>
