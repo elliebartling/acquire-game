@@ -6,6 +6,7 @@ import { supabase } from '@/supabase'
 export const useAuthStore = defineStore({
   id: 'auth',
   state: () => ({
+    loading: true,
     user: null,
     redirectRoute: null,
   }),
