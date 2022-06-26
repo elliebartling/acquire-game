@@ -77,7 +77,9 @@ export default {
     const handleLogin = async () => {
       try {
         loading.value = true
-        const { error } = await supabase.auth.signIn({ email: email.value })
+        const { error } = await supabase.auth.signIn({ email: email.value }, {
+        redirectTo: import.meta.env.REDIRECT_URL
+      })
         if (error) throw error
         alert("Check your email for the login link!")
       } catch (error) {
