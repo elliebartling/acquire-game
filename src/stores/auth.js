@@ -21,9 +21,9 @@ export const useAuthStore = defineStore({
     },
     async login(data) {
       const { user, error } = await supabase.auth.signIn(data, {
-        redirectTo: import.meta.env.REDIRECT_URL
+        redirectTo: import.meta.env.VITE_REDIRECT_URL
       })
-      console.log('redirect url', import.meta.env.REDIRECT_URL)
+      console.log('redirect url', import.meta.env.VITE_REDIRECT_URL)
       this.user = supabase.auth.user()
     },
     async getAvatarUrl(path) {
