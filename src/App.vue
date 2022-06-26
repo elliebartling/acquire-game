@@ -1,15 +1,11 @@
 <script setup>
 import { RouterLink, RouterView } from 'vue-router'
-// import HelloWorld from '@/components/HelloWorld.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useGamesStore } from '@/stores/games'
 import { usePlayersStore } from '@/stores/players'
-// import { store } from "./store"
 import { supabase } from "./supabase"
 import Auth from "./components/Auth.vue"
-import Profile from "./components/Profile.vue"
 import Nav from "./components/Nav.vue"
-import ProfileView from './views/ProfileView.vue'
 import SetUpProfileView from './views/SetUpProfileView.vue'
 import { Suspense } from 'vue'
 

@@ -6,6 +6,7 @@ import { supabase } from '@/supabase'
 export const useAuthStore = defineStore({
   id: 'auth',
   state: () => ({
+    loading: true,
     user: null,
     redirectRoute: null,
   }),
@@ -17,7 +18,6 @@ export const useAuthStore = defineStore({
     loadUser() {
         this.user = supabase.auth.user();
         // ToDo: hook this up to database
-        this.user.hasActiveGame = true
     },
     async login(data) {
       const { user, error } = await supabase.auth.signIn(data)
