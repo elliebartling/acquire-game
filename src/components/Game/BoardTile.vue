@@ -1,6 +1,6 @@
 <template>
     <button 
-        @click="movesStore.playMove(
+        @click="gamesStore.playMove(
             game, 
             number + '-' + letter,
             'tile',
@@ -14,13 +14,15 @@
 </template>
 <script>
 import { useAuthStore } from '../../stores/auth'
+import { useGamesStore } from '../../stores/games'
 import { useMovesStore } from '../../stores/moves'
 export default {
     name: 'BoardTile',
     setup() {
         const movesStore = useMovesStore()
         const authStore = useAuthStore()
-        return { movesStore, authStore }
+        const gamesStore = useGamesStore()
+        return { movesStore, authStore, gamesStore }
     },
     props: ['game', 'coordinates', 'moves'],
     computed: {
@@ -34,7 +36,7 @@ export default {
             return this.number + '-' + this.letter
         },
         tileStatus() {
-            if (!this.moves) return
+            if (!this.moves) return 'playable'
             const hasBeenPlayed = this.moves.find(move => move.move_value === this.tile)
             if (hasBeenPlayed) {
                 return 'has-been-played'

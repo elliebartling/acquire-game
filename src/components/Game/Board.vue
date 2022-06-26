@@ -17,7 +17,7 @@ export default {
         return { movesStore, authStore }
     },
     props: ['size', 'game', 'moves'],
-    components: {BoardTile}
+    components: {BoardTile},
 }
 </script>
 <style lang="">

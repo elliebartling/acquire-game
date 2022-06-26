@@ -16,6 +16,53 @@ export const useGamesStore = defineStore({
     }
   },
   actions: {
+    async getCurrentGame(id) {
+      let { data, error } = await supabase
+        .from('games')
+        .select(`
+          moves,
+          players,
+          rules,
+          net_scores
+        `)
+        .eq('id', id)
+        .single()
+      
+      if (error) throw error
+      this.currentGame = data
+      
+      const gameSubscription = supabase
+        .from(`games:id=eq.${id}`)
+        .on("UPDATE", payload => {
+          this.currentGame = payload.new
+        })
+        .subscribe()
+      
+    },
+    async playMove(game, move_value, move_type, player) {
+      console.log(game.id, move_value, move_type, player)
+
+      const move = {
+        player,
+        move_type,
+        move_value
+      }
+
+      // this.currentGame.moves.unshift({
+      //   player,
+      //   move_type,
+      //   move_value: move
+      // })
+
+      // console.log(this.currentGame.moves)
+
+      const { data, error } = await supabase
+          .from('games')
+          .update({ moves: move })
+          .eq('id', game.id)
+      
+      if (error) throw error
+    },
     async loadRecentGames() {
         let { data: games, error } = await supabase
             .from('games')
@@ -25,7 +72,6 @@ export const useGamesStore = defineStore({
         
         this.all = games
         this.listenForNewGames()
-        // this.listenForNewMoves()
     },
     listenForNewGames() {
       const gameSubscription = supabase
@@ -65,6 +111,16 @@ export const useGamesStore = defineStore({
     // },
     async createNewGame(settings) {
       console.log(settings)
+      let startingTiles = []
+
+      for (let h = 1; h < this.size.height; h++) {
+          for (let w = 1; w < this.size.width; w++) {
+              let col = w
+              let row = (h + 9).toString(36).toUpperCase()
+              arr.push(`${col}-${row}`)
+          }
+      }
+
       let { data, error } = await supabase
         .from('games')
         .insert(settings)

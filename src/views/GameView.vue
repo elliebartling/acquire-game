@@ -3,7 +3,7 @@ import { usePlayersStore } from '../stores/players'
 import { useGamesStore } from '../stores/games'
 import { useMovesStore } from '../stores/moves'
 import Board from '../components/Game/Board.vue'
-// import { useRoute } from "vue-router"
+import { useRoute } from "vue-router"
 import { supabase } from '@/supabase'
 import { ref } from 'vue'
 
@@ -12,13 +12,15 @@ export default {
         const playersStore = usePlayersStore()
         const gamesStore = useGamesStore()
         const movesStore = useMovesStore()
-        // const route = useRoute()
+        const route = useRoute()
+
         let moves = ref(0) 
 
         return { playersStore, gamesStore, movesStore, moves };
     },
     async mounted() {
         this.moves = await this.movesStore.getMoves(this.gameId)
+        this.gamesStore.getCurrentGame(this.gameId)
         let app = this
         let movesSubscription = supabase
             .from('moves')
@@ -30,7 +32,7 @@ export default {
     },
     computed: {
         gameId() {
-            return parseInt(this.$route.params.id)
+            return this.$route.params.id
         },
         game() {
             return this.gamesStore.gameById(this.gameId)
@@ -40,6 +42,14 @@ export default {
                 width: 12,
                 height: 9
             };
+        },
+        playerValues() {
+            const values = {
+                hand: Math.random(),
+                cash: Math.random(),
+                netWorth: Math.random()
+            }
+            return values
         }
     },
     methods: {
@@ -85,6 +95,7 @@ export default {
                 </div>
                 <div class="card col-span-4 row-span-2">
                     <h2 class="mt-4 mb-4">Your hand</h2>
+                    <p>{{playerValues}}</p>
                 </div>
             </div>
             <div class="flex flex-col gap-y-4 min-w-fit w-20 h-full">
@@ -119,9 +130,9 @@ export default {
                                             <div class="text-sm leading-1 mt-0.5 text-gray-500">
                                                 <span class="mr-2.5 block">
                                                     <!-- aquiremonstress played A-2 -->
-                                                    <span class="text-black">{{playersStore.playerById(move.player).username}}</span> 
+                                                    <!-- <span class="text-black">{{playersStore.playerById(move.player).username}}</span> 
                                                     {{formatMoveAction(move.move_type)}} 
-                                                    <span class="text-black">{{move.move_value}}</span>
+                                                    <span class="text-black">{{move.move_value}}</span> -->
                                                 </span>
                                             </div>
                                         </div>
