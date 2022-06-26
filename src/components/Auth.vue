@@ -78,8 +78,9 @@ export default {
       try {
         loading.value = true
         const { error } = await supabase.auth.signIn({ email: email.value }, {
-        redirectTo: import.meta.env.REDIRECT_URL
-      })
+          redirectTo: import.meta.env.REDIRECT_URL
+        })
+        console.log('redirect url auth', import.meta.env.REDIRECT_URL)
         if (error) throw error
         alert("Check your email for the login link!")
       } catch (error) {
