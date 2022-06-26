@@ -17,7 +17,7 @@ export const useAuthStore = defineStore({
     loadUser() {
         this.user = supabase.auth.user();
         // ToDo: hook this up to database
-        this.user.hasActiveGame = true
+        // this.user.hasActiveGame = true
     },
     async login(data) {
       const { user, error } = await supabase.auth.signIn(data)
