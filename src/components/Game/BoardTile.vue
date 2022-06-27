@@ -8,7 +8,7 @@
         )"
         :class="tileStatus"
         :disabled="disabled"
-        class="tile text-sm xl:text-base">
+        class="tile text-xs xl:text-base">
             {{number}}-{{letter}}
     </button>
 </template>
