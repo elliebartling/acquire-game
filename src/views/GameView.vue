@@ -70,7 +70,7 @@ export default {
 </script>
 <template>
     <header class="py-4 md:py-10 bg-gray-800 pb-16">
-        <div v-if="game" class="container mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-start md:items-center justify-start md:justify-end space-y-2 md:space-x-5">
+        <div v-if="game" class="container mx-auto px-4 sm:px-6 lg:px-8 flex flex-col lg:flex-row items-start lg:items-center justify-start md:justify-end space-y-2 md:space-x-5">
             <h1 class="text-2xl md:text-3xl font-bold text-white mb-2">Game</h1>
             <div v-if="game.rules.length > 0" class="flex flex-row justify-center items-center">
                 <span class="text-gray-400 font-medium mr-2">Rules: </span>
@@ -79,6 +79,7 @@ export default {
                 </div>
             </div>
             <div v-else class="rounded bg-slate-700 text-white p-2 mt-1 text-xs font-medium">Standard Rules</div>
+            <button @click="gamesStore.initGame(game)" class="button primary">Init Game</button>
             <div class="relative grow flex justify-end">
                 <span class="font-medium text-sm md:text-base text-gray-400">Players: </span>
                 <span v-for="(player, index) in game.players" class="text-white font-medium ml-2 text-sm md:text-base">

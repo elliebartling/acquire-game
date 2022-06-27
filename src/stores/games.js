@@ -53,8 +53,6 @@ export const useGamesStore = defineStore({
 
       this.currentGame.moves ? this.currentGame.moves.unshift(move) : this.currentGame.moves = move
 
-      // console.log(this.currentGame.moves)
-
       const { data, error } = await supabase
           .from('games')
           .update({ moves: this.currentGame.moves })
@@ -93,6 +91,9 @@ export const useGamesStore = defineStore({
         })
         .subscribe()
     },
+    getNewHand(playerId) {
+      console.log('Getting new hand', playerId, this.currentGame.id)
+    },
     // listenForNewMoves() {
     //   const moveSubscription = supabase
     //     .from('moves')
@@ -122,22 +123,27 @@ export const useGamesStore = defineStore({
     //     .subscribe()
     // },
     async createNewGame(settings) {
-      console.log(settings)
-      let startingTiles = []
-
-      // for (let h = 1; h < this.size.height; h++) {
-      //     for (let w = 1; w < this.size.width; w++) {
-      //         let col = w
-      //         let row = (h + 9).toString(36).toUpperCase()
-      //         arr.push(`${col}-${row}`)
-      //     }
-      // }
-
       let { data, error } = await supabase
         .from('games')
         .insert(settings)
       
       if (error) throw error 
+    },
+    async initGame(game) {
+      const { id, players } = game
+      let startingTiles = []
+
+      let height = 9
+      let width = 12
+
+      for (let h = 1; h < height; h++) {
+          for (let w = 1; w < width; w++) {
+              let col = w
+              let row = (h + 9).toString(36).toUpperCase()
+              startingTiles.push(`${col}-${row}`)
+          }
+      }
+      console.log("initializing game", id, players, startingTiles)
     }
   }
 })
