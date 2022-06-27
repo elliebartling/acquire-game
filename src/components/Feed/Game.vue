@@ -66,7 +66,7 @@
               </div>
             </div>
           </div>
-          <div class="min-w-0 flex-1 py-0">
+          <div class="min-w-0 flex-1 py-0 mt-1">
               <div class="text-sm leading-1 text-gray-500">
                 <span class="mr-2.5 mb-2 w-full md:max-w-fit block">
                   <router-link :to="`/player/${playerOne ? playerOne.id : 0}`" class="font-medium text-gray-900">{{playerOne ? playerOne.username : ''}}</router-link>
@@ -74,11 +74,14 @@
                   <span class="whitespace-nowrap">{{ timeStarted }}</span>
                 </span>
                 <span class="mr-0.5">
-                  <div href="/" class="relative inline-flex items-center rounded-full border border-gray-300 px-3 py-0.5 text-sm mr-2">
+                  <div class="relative inline-flex items-center rounded-full border border-gray-300 px-3 py-0.5 text-sm mr-2">
                     <span class="absolute flex-shrink-0 flex items-center justify-center">
                       <span class="h-1.5 w-1.5 rounded-full" :class="game.isFull ? 'bg-red-500' : 'bg-green-500'" aria-hidden="true"></span>
                     </span>
                     <span class="ml-3.5 font-medium text-gray-900">{{game.players.length}} <span class="text-gray-400">/ {{game.number_of_seats}} players</span></span>
+                  </div>
+                  <div v-for="rule in game.rules" :key="rule" class="pill bg-teal-400 border-teal-400 mr-2">
+                    <span class="font-medium text-gray-900">{{ rule.replace('-', ' ') }}</span>
                   </div>
                   <router-link v-if="game.isFull" :to="`/game/${game.id}`" class="relative inline-flex items-center rounded-full text-white bg-sky-500 px-3 border border-sky-500 py-0.5 text-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -100,3 +103,8 @@
       </div>
     </li>
 </template>
+<style>
+.pill {
+  @apply relative inline-flex items-center rounded-full border px-3 py-0.5 text-sm;
+}
+</style>

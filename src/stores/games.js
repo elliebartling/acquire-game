@@ -51,26 +51,20 @@ export const useGamesStore = defineStore({
         move_value
       }
 
-      // this.currentGame.moves.unshift({
-      //   player,
-      //   move_type,
-      //   move_value: move
-      // })
+      this.currentGame.moves ? this.currentGame.moves.unshift(move) : this.currentGame.moves = move
 
       // console.log(this.currentGame.moves)
 
       const { data, error } = await supabase
           .from('games')
-          .update({ moves: move })
+          .update({ moves: this.currentGame.moves })
           .eq('id', game.id)
       
       if (error) throw error
     },
     async joinGame(playerId, game) {
-      console.log('join', playerId, game)
       let newPlayers = game.players
       newPlayers.push(playerId)
-      console.log('players', newPlayers)
 
       const { data, error } = await supabase
           .from('games')

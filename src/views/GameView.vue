@@ -15,7 +15,6 @@ export default {
         const movesStore = useMovesStore()
         const authStore = useAuthStore()
         const route = useRoute()
-
         const gameId = route.params.id
         const game = await gamesStore.getCurrentGame(gameId)
 
@@ -28,9 +27,7 @@ export default {
             console.log('full sorry')
         }
 
-        let moves = ref(0) 
-
-        return { playersStore, gamesStore, movesStore, moves, authStore };
+        return { playersStore, gamesStore, movesStore, authStore, game };
     },
     async mounted() {
         this.moves = await this.movesStore.getMoves(this.gameId)
@@ -45,6 +42,9 @@ export default {
             .subscribe();
     },
     computed: {
+        moves() {
+            return this.gamesStore.currentGame.moves
+        },
         gameId() {
             return this.$route.params.id
         },
@@ -144,9 +144,9 @@ export default {
                                             <div class="text-sm leading-1 mt-0.5 text-gray-500">
                                                 <span class="mr-2.5 block">
                                                     <!-- aquiremonstress played A-2 -->
-                                                    <!-- <span class="text-black">{{playersStore.playerById(move.player).username}}</span> 
+                                                    <span class="text-black">{{playersStore.playerById(move.player).username}}</span> 
                                                     {{formatMoveAction(move.move_type)}} 
-                                                    <span class="text-black">{{move.move_value}}</span> -->
+                                                    <span class="text-black">{{move.move_value}}</span>
                                                 </span>
                                             </div>
                                         </div>
