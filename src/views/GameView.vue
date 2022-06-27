@@ -88,7 +88,7 @@ export default {
             </div>
         </div>
     </header>
-    <main v-if="game" class="container mx-auto -mt-16 px-4 h-screen">
+    <main v-if="game" class="container mx-auto -mt-16 px-4 h-screen block mb-96">
         <div id="grid" class="grid mt-4 sm:mt-8 lg:mt-10 gap-y-4 gap-x-4 grid-cols-6 lg:grid-rows-6">
             <div id="scores" class="card col-span-6 lg:col-span-2 lg:order-1 shadow-md lg:row-span-1 w-full">
                 <h2 class="mt-4 mb-4">Scores</h2>
@@ -142,8 +142,9 @@ export default {
                 </div>
             </div>
         </div>
+        <h2 class="mt-32 mb-2">Debug</h2>
+        <code class="bg-gray-900 block rounded text-xs p-4 text-white block"><pre>{{ game }}</pre></code>
     </main>
-    <code class="bg-gray-900 block rounded text-xs p-4 m-4 text-white"><pre>{{ game }}</pre></code>
 </template>
 <style>
 /* #grid {
