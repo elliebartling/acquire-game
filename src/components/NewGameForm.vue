@@ -36,22 +36,22 @@
             <legend class="sr-only">Number of players</legend>
             <div class="grid grid-cols-3 gap-y-2 lg:grid-cols-4">
                 <div class="flex items-center justify-start">
-                <input v-model="numberOfSeats" value="2" id="2 players" name="players" type="radio" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300">
+                <input v-model="number_of_seats" value="2" id="2 players" name="players" type="radio" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300">
                 <label for="2 players" class="ml-3 block text-sm font-medium text-gray-700"> 2 </label>
                 </div>
         
                 <div class="flex items-center justify-start">
-                <input v-model="numberOfSeats" value="3" id="3 players" name="players" type="radio" checked class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300">
+                <input v-model="number_of_seats" value="3" id="3 players" name="players" type="radio" checked class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300">
                 <label for="3 players" class="ml-3 block text-sm font-medium text-gray-700"> 3 </label>
                 </div>
         
                 <div class="flex items-center justify-start">
-                <input v-model="numberOfSeats" value="4" id="4 players" name="players" type="radio" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300">
+                <input v-model="number_of_seats" value="4" id="4 players" name="players" type="radio" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300">
                 <label for="4 players" class="ml-3 block text-sm font-medium text-gray-700"> 4 </label>
                 </div>
 
                 <div class="flex items-center justify-start">
-                    <input v-model="numberOfSeats" value="5" id="4 (teams)" name="players" type="radio" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300">
+                    <input v-model="number_of_seats" value="5" id="4 (teams)" name="players" type="radio" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300">
                     <label for="4 (teams)" class="ml-3 block text-sm font-medium text-gray-700 whitespace-nowrap"> 4 (teams) </label>
                 </div>
             </div>
@@ -89,7 +89,7 @@ import { useGamesStore } from '../stores/games'
         data() {
             return {
                 publicGame: true,
-                numberOfSeats: 3,
+                number_of_seats: 3,
                 rules: [],
                 success: false
             }
@@ -103,7 +103,7 @@ import { useGamesStore } from '../stores/games'
             settings() {
                 return {
                     public: this.publicGame,
-                    numberOfSeats: this.numberOfSeats,
+                    number_of_seats: this.number_of_seats,
                     rules: this.rules,
                     players: [this.authStore.user.id]
                 }

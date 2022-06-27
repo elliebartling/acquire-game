@@ -20,10 +20,12 @@ export const useGamesStore = defineStore({
       let { data, error } = await supabase
         .from('games')
         .select(`
+          id,
           moves,
           players,
           rules,
-          net_scores
+          net_scores,
+          number_of_seats
         `)
         .eq('id', id)
         .single()
@@ -37,7 +39,8 @@ export const useGamesStore = defineStore({
           this.currentGame = payload.new
         })
         .subscribe()
-      
+
+      return data
     },
     async playMove(game, move_value, move_type, player) {
       console.log(game.id, move_value, move_type, player)
@@ -62,6 +65,21 @@ export const useGamesStore = defineStore({
           .eq('id', game.id)
       
       if (error) throw error
+    },
+    async joinGame(playerId, game) {
+      console.log('join', playerId, game)
+      let newPlayers = game.players
+      newPlayers.push(playerId)
+      console.log('players', newPlayers)
+
+      const { data, error } = await supabase
+          .from('games')
+          .update({ players: newPlayers })
+          .eq('id', game.id)
+      
+      if (error) throw error
+      
+      return data
     },
     async loadRecentGames() {
         let { data: games, error } = await supabase
@@ -113,13 +131,13 @@ export const useGamesStore = defineStore({
       console.log(settings)
       let startingTiles = []
 
-      for (let h = 1; h < this.size.height; h++) {
-          for (let w = 1; w < this.size.width; w++) {
-              let col = w
-              let row = (h + 9).toString(36).toUpperCase()
-              arr.push(`${col}-${row}`)
-          }
-      }
+      // for (let h = 1; h < this.size.height; h++) {
+      //     for (let w = 1; w < this.size.width; w++) {
+      //         let col = w
+      //         let row = (h + 9).toString(36).toUpperCase()
+      //         arr.push(`${col}-${row}`)
+      //     }
+      // }
 
       let { data, error } = await supabase
         .from('games')

@@ -25,7 +25,7 @@
     //   const date = Date.parse(game.created_at)
     //   timeStarted = timeAgo.format(date)
     //   currentPlayers = game.players.length
-    //   totalSeats = game.numberOfSeats
+    //   totalSeats = game.number_of_seats
     // }
   
     // console.log('game', game)
@@ -46,7 +46,7 @@
                 return timeAgo.format(Date.parse(this.game.created_at), { future: false })
             },
             isFull() {
-              return !(this.game.players.length < this.game.numberOfSeats)
+              return !(this.game.players.length < this.game.number_of_seats)
             }
         }
     }
@@ -78,7 +78,7 @@
                     <span class="absolute flex-shrink-0 flex items-center justify-center">
                       <span class="h-1.5 w-1.5 rounded-full" :class="game.isFull ? 'bg-red-500' : 'bg-green-500'" aria-hidden="true"></span>
                     </span>
-                    <span class="ml-3.5 font-medium text-gray-900">{{game.players.length}} <span class="text-gray-400">/ {{game.numberOfSeats}} players</span></span>
+                    <span class="ml-3.5 font-medium text-gray-900">{{game.players.length}} <span class="text-gray-400">/ {{game.number_of_seats}} players</span></span>
                   </div>
                   <router-link v-if="game.isFull" :to="`/game/${game.id}`" class="relative inline-flex items-center rounded-full text-white bg-sky-500 px-3 border border-sky-500 py-0.5 text-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

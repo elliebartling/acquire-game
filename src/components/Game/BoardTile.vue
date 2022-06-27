@@ -8,7 +8,7 @@
         )"
         :class="tileStatus"
         :disabled="disabled"
-        class="tile">
+        class="tile text-sm xl:text-base">
             {{number}}-{{letter}}
     </button>
 </template>
@@ -37,7 +37,9 @@ export default {
         },
         tileStatus() {
             if (!this.moves) return 'playable'
+            
             const hasBeenPlayed = this.moves.find(move => move.move_value === this.tile)
+            
             if (hasBeenPlayed) {
                 return 'has-been-played'
             } else {

@@ -6,17 +6,31 @@ import Board from '../components/Game/Board.vue'
 import { useRoute } from "vue-router"
 import { supabase } from '@/supabase'
 import { ref } from 'vue'
+import { useAuthStore } from '../stores/auth'
 
 export default {
-    setup() {
+    async setup() {
         const playersStore = usePlayersStore()
         const gamesStore = useGamesStore()
         const movesStore = useMovesStore()
+        const authStore = useAuthStore()
         const route = useRoute()
+
+        const gameId = route.params.id
+        const game = await gamesStore.getCurrentGame(gameId)
+
+        const joinable = route.query.join && game.players.length < game.number_of_seats
+        const isAlreadyInGame = !!game.players.find((id) => id === authStore.user.id)
+
+        if (joinable && !isAlreadyInGame) {
+            gamesStore.joinGame(authStore.user.id, game)
+        } else {
+            console.log('full sorry')
+        }
 
         let moves = ref(0) 
 
-        return { playersStore, gamesStore, movesStore, moves };
+        return { playersStore, gamesStore, movesStore, moves, authStore };
     },
     async mounted() {
         this.moves = await this.movesStore.getMoves(this.gameId)

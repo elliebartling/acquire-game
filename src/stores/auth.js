@@ -3,6 +3,8 @@ import { defineStore } from 'pinia'
 // import { User } from '@supabase/supabase-js'
 import { supabase } from '@/supabase'
 
+// https://jrxkyegtcvztdaipafow.supabase.co/auth/v1/verify?token=rkteirrybtfquzkstscc&type=magiclink&redirect_to=http://localhost:3000,https://acquire-game.netlify.app
+
 export const useAuthStore = defineStore({
   id: 'auth',
   state: () => ({
