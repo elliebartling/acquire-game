@@ -32,6 +32,12 @@ const router = createRouter({
       name: 'game',
       component: () => import('../views/GameView.vue')
     },
+    {
+      path: '/devtest',
+      name: 'devtest',
+      component: () => import('../views/FunctionsInvoker.vue')
+    },
+
   ]
 })
 

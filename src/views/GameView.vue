@@ -21,6 +21,8 @@ export default {
         const joinable = route.query.join && game.players.length < game.number_of_seats
         const isAlreadyInGame = !!game.players.find((id) => id === authStore.user.id)
 
+        
+
         if (joinable && !isAlreadyInGame) {
             gamesStore.joinGame(authStore.user.id, game)
         } else {
