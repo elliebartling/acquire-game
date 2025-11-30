@@ -108,7 +108,7 @@ export default {
 
 <style scoped lang="postcss">
 .hand-tile {
-  @apply rounded border border-gray-200 px-3 py-2 text-sm font-medium shadow-sm transition-colors;
+  @apply rounded border border-gray-200 px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:ring-2 hover:ring-gray-300 focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:outline-none;
 }
 .hand-tile--neutral {
   @apply bg-white text-gray-800 hover:bg-gray-50;
