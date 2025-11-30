@@ -12,7 +12,9 @@
         :tile-key="buildKey(col, row)"
         :tile-info="board.tiles[buildKey(col, row)]"
         :chain-class="chainClassFor(board.tiles[buildKey(col, row)])"
-        :disabled="!isPlayersTurn"
+        :in-hand="tileIsInHand(buildKey(col, row))"
+        :tile-hint="tileHintFor(buildKey(col, row))"
+        :disabled="!canPlayTile(buildKey(col, row))"
         @play-tile="$emit('play-tile', $event)"
       />
     </template>
@@ -44,6 +46,14 @@ export default {
     chains: {
       type: Array,
       default: () => []
+    },
+    playableTiles: {
+      type: Array,
+      default: () => []
+    },
+    tileHints: {
+      type: Object,
+      default: () => ({})
     }
   },
   emits: ['play-tile'],
@@ -68,12 +78,37 @@ export default {
         acc[chain.id] = chain
         return acc
       }, {})
+    },
+    playableTilesSet() {
+      return new Set(this.playableTiles || [])
+    },
+    handTileHints() {
+      return this.tileHints || {}
     }
   },
   methods: {
     buildKey(column, rowNumber) {
       const letter = String.fromCharCode('A'.charCodeAt(0) + (rowNumber - 1))
       return `${column}-${letter}`
+    },
+    canPlayTile(tileKey) {
+      const normalized = tileKey?.toUpperCase?.() || tileKey
+      if (!this.board) return false
+      if (this.board.tiles?.[normalized]) return false
+      if (!this.isPlayersTurn) return false
+      if (this.playableTilesSet.size === 0) return false
+      const hint = this.handTileHints[normalized]
+      if (hint?.status === 'blocked') return false
+      return this.playableTilesSet.has(normalized)
+    },
+    tileIsInHand(tileKey) {
+      const normalized = tileKey?.toUpperCase?.() || tileKey
+      if (!this.playableTilesSet.size) return false
+      return this.playableTilesSet.has(normalized)
+    },
+    tileHintFor(tileKey) {
+      const normalized = tileKey?.toUpperCase?.() || tileKey
+      return this.handTileHints[normalized] || null
     },
     chainClassFor(tileInfo) {
       if (!tileInfo?.chainId) return ''

@@ -238,7 +238,8 @@ serve(async (req: Request) => {
     if (!data.game_state) {
       data.game_state = existingGameState;
     }
-    const boardConfig = data.board_config ?? {};
+    const boardConfig = data.board_config ??
+      existingGameState.config ?? { width: 12, height: 9 };
     const playerIds = Array.isArray(data.players)
       ? (data.players as string[])
       : [];
@@ -247,7 +248,6 @@ serve(async (req: Request) => {
     const moveRecord = buildMoveRecord(move, userData.user.id);
     const nextMoves = [moveRecord, ...(data.moves ?? [])];
 
-    const boardConfig = data.board_config ?? { width: 12, height: 9 };
     const board = ensureBoard(existingGameState.board, boardConfig);
     const chains = ensureChains(
       existingGameState.chains,

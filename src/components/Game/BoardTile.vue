@@ -1,7 +1,7 @@
 <template>
   <button
     class="tile text-xs xl:text-base"
-    :class="[variantClass, tileInfo && chainClass ? chainClass : '']"
+    :class="variantClasses"
     :disabled="disabled || Boolean(tileInfo)"
     @click="handleClick"
   >
@@ -28,13 +28,41 @@ export default {
     chainClass: {
       type: String,
       default: ''
+    },
+    inHand: {
+      type: Boolean,
+      default: false
+    },
+    tileHint: {
+      type: Object,
+      default: null
     }
   },
   emits: ['play-tile'],
   computed: {
-    variantClass() {
-      if (!this.tileInfo) return 'playable'
-      return this.chainClass ? 'played-colored' : 'played-default'
+    variantClasses() {
+      if (this.tileInfo) {
+        const playedClass = this.chainClass ? 'played-colored' : 'played-default'
+        return this.chainClass ? [playedClass, this.chainClass] : [playedClass]
+      }
+      const status = this.tileHint?.status
+      const base = this.inHand ? ['hand-highlight'] : ['playable']
+      switch (status) {
+        case 'merge':
+          base.push('tile-merge')
+          break
+        case 'grow':
+          base.push('tile-grow')
+          break
+        case 'seed':
+          base.push('tile-seed')
+          break
+        case 'blocked':
+          return ['tile-blocked']
+        default:
+          break
+      }
+      return base
     }
   },
   methods: {
@@ -46,7 +74,7 @@ export default {
 }
 </script>
 
-<style scoped>
+<style scoped lang="postcss">
 .tile {
   @apply rounded aspect-square flex justify-center items-center text-center font-medium transition-colors;
 }
@@ -55,6 +83,32 @@ export default {
 }
 .tile.playable:hover {
   @apply bg-gray-200;
+}
+.tile.hand-highlight {
+  @apply bg-gray-200 text-gray-800 border border-gray-200;
+}
+.tile.hand-highlight:hover {
+  @apply bg-gray-300;
+}
+.tile.tile-grow {
+  @apply border border-gray-400;
+}
+.tile.tile-seed {
+  @apply bg-gray-300 text-gray-900 border border-gray-400;
+}
+.tile.tile-merge {
+  background-color: #e5e7eb;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(156, 163, 175, 0.25),
+    rgba(156, 163, 175, 0.25) 10px,
+    transparent 10px,
+    transparent 20px
+  );
+  @apply text-gray-800 border border-gray-300;
+}
+.tile.tile-blocked {
+  @apply bg-gray-200 text-gray-400 border border-gray-300;
 }
 .tile.played-default {
   @apply bg-gray-900 text-white cursor-not-allowed shadow-sm rounded;

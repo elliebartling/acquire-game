@@ -10,6 +10,7 @@ import { useGamesStore } from '@/stores/games'
 import { useGameStore } from '@/stores/game'
 import { useAuthStore } from '@/stores/auth'
 import { getChainButtonClass } from '@/constants/chainColors'
+import { buildTileHints } from '@/game/utils/tileHints'
 
 const route = useRoute()
 const playersStore = usePlayersStore()
@@ -23,6 +24,9 @@ const publicState = computed(() => gameStore.publicState)
 const playerView = computed(() => gameStore.playerView)
 const moves = computed(() => publicState.value?.moves || [])
 const pendingAction = computed(() => playerView.value?.pendingAction || null)
+const handTileHints = computed(() =>
+  buildTileHints(playerView.value?.hand || [], publicState.value?.board, publicState.value?.chains)
+)
 
 const currentGame = computed(() => gamesStore.gameById(gameId.value))
 
@@ -140,6 +144,8 @@ watch(
                     :chains="publicState.chains"
                     :current-player-id="publicState.currentPlayerId"
                     :player-id="authStore.user?.id"
+                    :playable-tiles="playerView?.hand || []"
+                    :tile-hints="handTileHints"
                     @play-tile="playTile"
                 />
                 <div
@@ -166,6 +172,7 @@ watch(
                 <div class="mt-6 border-t border-gray-100 pt-4">
                   <PlayerHand
                     :hand="playerView?.hand"
+                    :hand-hints="handTileHints"
                     :disabled="!playerView?.canPlayTile"
                     :embedded="true"
                     @play-tile="playTile"
