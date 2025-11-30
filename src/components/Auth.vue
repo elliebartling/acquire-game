@@ -7,7 +7,7 @@
     <main class="container mx-auto -mt-16 px-4">
         <div class="grid gap-4 grid-cols-2 md:grid-cols-4 xl:grid-cols-5 grid-rows-3 py-8">
             <div class="bg-white rounded-md px-6 pb-6 col-span-3 shadow-md">
-              <form class="row flex flex-center" @submit.prevent="handleLogin">
+              <form class="row flex flex-center" @submit.prevent="handlePasswordLogin">
                 <div class="col-6 form-widget">
                   <h1 class="mt-4 mb-2">Sign in/up</h1>
                   <p class="description label">Sign in or up with your email & password</p>
@@ -35,7 +35,7 @@
                   </div>
                 </div>
               </form>
-              <form class="row flex flex-center" @submit.prevent="authStore.login({ email, password })">
+              <form class="row flex flex-center" @submit.prevent="handleMagicLink">
                 <div class="col-6 form-widget">
                   <h1 class="mt-4 mb-2">Get a magic link</h1>
                   <p class="description label">Got an account already? Sign in via magic link with your email below</p>
@@ -74,7 +74,58 @@ export default {
     const password = ref("")
     const authStore = useAuthStore()
 
-    const handleLogin = async () => {
+    const handlePasswordLogin = async () => {
+      if (!email.value || !password.value) {
+        alert("Please enter both an email and password.")
+        return
+      }
+      try {
+        loading.value = true
+        const { error } = await supabase.auth.signIn({
+          email: email.value,
+          password: password.value
+        })
+        if (!error) {
+          password.value = ""
+          await authStore.loadUser()
+          alert("Signed in successfully!")
+          return
+        }
+        if (error.message !== "Invalid login credentials") {
+          throw error
+        }
+
+        const { session: signUpSession, error: signUpError } = await supabase.auth.signUp({
+          email: email.value,
+          password: password.value
+        })
+
+        if (signUpError) {
+          if (signUpError.message === "User already registered") {
+            throw new Error("Incorrect password. Try again or request a magic link.")
+          }
+          throw signUpError
+        }
+
+        password.value = ""
+        if (signUpSession) {
+          await authStore.loadUser()
+          alert("Account created and signed in!")
+        } else {
+          alert("Account created! Check your email to confirm the address.")
+        }
+      } catch (error) {
+        alert(error.error_description || error.message)
+      } finally {
+        loading.value = false
+      }
+    }
+
+    const handleMagicLink = async () => {
+      if (!email.value) {
+        alert("Please enter your email.")
+        return
+      }
       try {
         loading.value = true
         const { error } = await supabase.auth.signIn({ email: email.value }, {
@@ -93,8 +144,9 @@ export default {
     return {
       loading,
       email,
-      handleLogin,
-      authStore
+      password,
+      handlePasswordLogin,
+      handleMagicLink
     }
   },
 }

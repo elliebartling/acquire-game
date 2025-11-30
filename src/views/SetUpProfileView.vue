@@ -7,7 +7,11 @@ import { useAuthStore } from '../stores/auth'
         setup() {
             const blankProfile = {
                 username: '',
-                avatar_url: ''
+                avatar_url: '',
+                avatar_seed: '',
+                avatar_style: 'adventurerNeutral',
+                avatar_options: {},
+                avatar_preview: ''
             }
 
             return { blankProfile }

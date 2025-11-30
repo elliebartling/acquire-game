@@ -37,9 +37,9 @@
           <div v-if="!user" class="block">
             <a href="/login" class="text-white text-sm font-medium">Log in</a>
           </div>
-          <div v-else-if="user && !user.profile">
+          <div v-else-if="user && !(user.profile && user.profile.username)">
             <router-link :to="`/player/${user.id}`" class="text-white text-sm font-medium">Set up your profile</router-link>
-            <button class="button block secondary" @click="authStore.signOut()" :disabled="loading">
+            <button class="button block secondary" @click="authStore.signOut()" :disabled="authStore.loading">
               Sign Out
             </button>
           </div>
@@ -47,13 +47,29 @@
             <div class="ml-4 flex items-center md:ml-6">
               <!-- Profile dropdown -->
               <div class="ml-3 relative">
-                <div>
-                  <router-link :to="`/player/${user.id}`" class="max-w-xs bg-gray-800 rounded-full flex items-center text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white" aria-expanded="false" aria-haspopup="true">
-                    <span class="sr-only">Open user menu</span>
-                    <!-- <img class="h-8 w-8 rounded-full" :src="user.profile.avatar_url" alt=""> -->
-                    <span class="text-white mr-2 ml-2">{{user.profile.username}}</span>
-                  </router-link>
-                </div>
+                <router-link
+                  :to="`/player/${user.id}`"
+                  class="max-w-xs bg-gray-800 rounded-full flex items-center gap-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white px-2 py-1"
+                  aria-expanded="false"
+                  aria-haspopup="true"
+                >
+                  <span class="sr-only">Open user menu</span>
+                  <span class="h-8 w-8 rounded-full border border-gray-700 bg-gray-900 overflow-hidden flex items-center justify-center">
+                    <img
+                      v-if="user.profile?.avatar_preview || user.profile?.avatar_url"
+                      class="h-full w-full object-cover"
+                      :src="user.profile.avatar_preview || user.profile.avatar_url"
+                      alt="User avatar"
+                    />
+                    <span
+                      v-else
+                      class="text-xs uppercase text-white"
+                    >
+                      {{ user.profile?.username?.charAt(0) || '?' }}
+                    </span>
+                  </span>
+                  <span class="text-white font-medium">{{ user.profile.username }}</span>
+                </router-link>
               </div>
               <button type="button" class="ml-1 button button-sm bg-gray-800 p-1 text-gray-400 rounded-full hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white">
                 <span class="sr-only">View notifications</span>
@@ -63,7 +79,7 @@
                 </svg>
               </button>
               <!-- <router-link v-if="user" to="/current-game" class="button button-sm hover:text-white primary mr-2 font-medium ml-4">Re-Join Current Game</router-link> -->
-              <button class="button button-sm block secondary" @click="authStore.signOut()" :disabled="loading">
+              <button class="button button-sm block secondary" @click="authStore.signOut()" :disabled="authStore.loading">
                 Sign Out
               </button>
             </div>

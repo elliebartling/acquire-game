@@ -10,6 +10,14 @@ This template should help get you started developing with Vue 3 in Vite.
 
 See [Vite Configuration Reference](https://vitejs.dev/config/).
 
+## Project Documentation
+
+- [Architecture](docs/architecture.md) – outlines the multi-layer game design,
+  privacy guarantees and Supabase integration strategy.
+- [Rules](docs/rules.md) – quick reference of the Acquire rules plus supported
+  optional variations.
+- [Supabase](docs/supabase.md) – migration + Edge Function deployment steps.
+
 ## Project Setup
 
 ```sh

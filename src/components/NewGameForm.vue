@@ -1,8 +1,11 @@
 <template lang="">
-    <form @submit.prevent="gamesStore.createNewGame(settings)">
+    <form @submit.prevent="handleCreateGame">
         <div>
-            <div v-if="success">
-                Success!
+            <div v-if="success" class="mb-4 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+                Game created! Redirecting you now...
+            </div>
+            <div v-else-if="error" class="mb-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">
+                {{ error }}
             </div>
             <div class="flex flex-col items-start justify-between">
             <h2 class="text-lg font-medium text-gray-900">Rules</h2>
@@ -10,25 +13,41 @@
             </div>
         
             <fieldset class="space-y-5 mt-6 mb-6">
-                <div class="relative flex items-start">
-                <div class="flex items-center">
-                    <input v-model="rules" value='extra-hotels'  aria-describedby="comments-description" name="comments" type="checkbox" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded">
-                </div>
-                <div class="ml-3 text-sm">
-                    <label for="comments" class="font-medium text-gray-700">More hotels</label>
-                    <p class="text-gray-500">Add 3 more hotels to the board.</p>
-                </div>
-                </div>
-                <div class="relative flex items-start">
-                <div class="flex items-center">
-                    <input v-model="rules" value='loans' aria-describedby="candidates-description" name="candidates" type="checkbox" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded">
-                </div>
-                <div class="ml-3 text-sm">
-                    <label for="candidates" class="font-medium text-gray-700">Loans</label>
-                    <p class="text-gray-500">Allow players to take out loans.</p>
-                </div>
+                <div v-for="rule in optionalRules" :key="rule.id" class="relative flex items-start">
+                    <div class="flex items-center">
+                        <input
+                            :id="rule.id"
+                            v-model="rules"
+                            :value="rule.id"
+                            type="checkbox"
+                            class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+                        >
+                    </div>
+                    <div class="ml-3 text-sm">
+                        <label :for="rule.id" class="font-medium text-gray-700">{{ rule.label }}</label>
+                        <p class="text-gray-500">{{ rule.description }}</p>
+                    </div>
                 </div>
             </fieldset>
+
+            <div class="flex flex-col items-start justify-between mb-6">
+                <h2 class="text-lg font-medium text-gray-900">Board configuration</h2>
+                <p class="text-sm text-gray-500">Choose a preset to control board size and pacing.</p>
+            </div>
+            <div class="grid grid-cols-1 gap-3 mb-10">
+                <label v-for="preset in boardPresets" :key="preset.id" class="flex items-start p-3 border rounded-md cursor-pointer">
+                    <input
+                        v-model="boardPreset"
+                        class="mt-1 h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                        type="radio"
+                        :value="preset.id"
+                    >
+                    <span class="ml-3">
+                        <span class="block text-sm font-medium text-gray-900">{{ preset.label }}</span>
+                        <span class="block text-sm text-gray-500">{{ preset.description }}</span>
+                    </span>
+                </label>
+            </div>
 
             <label class="text-base font-medium text-gray-900">Players</label>
             <p class="text-sm leading-5 text-gray-500">Select the maximum number of players.</p>
@@ -78,20 +97,26 @@
                 </fieldset>
             </div>
         </div>
-        <button class="button primary">Create</button>
+        <button class="button primary" :disabled="isSubmitting">
+          {{ isSubmitting ? 'Creating...' : 'Create' }}
+        </button>
     </form>
 </template>
 <script>
-    // import { mapActions } from 'pinia'
-    import { useAuthStore } from '../stores/auth'
+import { useAuthStore } from '../stores/auth'
 import { useGamesStore } from '../stores/games'
+import { RULES_REGISTRY } from '@/game/rules/rulesRegistry'
+import { CONFIG_PRESETS } from '@/game/config/ConfigPresets'
     export default {
         data() {
             return {
                 publicGame: true,
                 number_of_seats: 3,
                 rules: [],
-                success: false
+                success: false,
+                boardPreset: 'standard',
+                isSubmitting: false,
+                error: ''
             }
         },
         setup(props) {
@@ -100,14 +125,45 @@ import { useGamesStore } from '../stores/games'
           return { gamesStore, authStore }
         },
         computed: {
+            optionalRules() {
+                return RULES_REGISTRY.filter(rule => !rule.required && rule.id !== 'standard')
+            },
+            boardPresets() {
+                return Object.values(CONFIG_PRESETS)
+            },
             settings() {
                 return {
                     public: this.publicGame,
-                    number_of_seats: this.number_of_seats,
+                    number_of_seats: Number(this.number_of_seats),
                     rules: this.rules,
-                    players: [this.authStore.user.id]
+                    players: this.authStore.user?.id ? [this.authStore.user.id] : [],
+                    boardPreset: this.boardPreset
                 }
             }
         },
+        methods: {
+          async handleCreateGame() {
+            if (!this.authStore.user?.id) {
+              this.error = 'Please sign in before creating a game.'
+              return
+            }
+
+            this.isSubmitting = true
+            this.success = false
+            this.error = ''
+            try {
+              const newGame = await this.gamesStore.createNewGame(this.settings)
+              this.success = true
+              if (newGame?.id) {
+                await this.$router.push({ name: 'game', params: { id: newGame.id } })
+              }
+            } catch (err) {
+              console.error('Failed to create game', err)
+              this.error = err.message || 'Unable to create game. Please try again.'
+            } finally {
+              this.isSubmitting = false
+            }
+          }
+        }
     }
 </script>

@@ -1,25 +1,86 @@
-<template lang="">
-    <div id="board" :class="`grid-cols-${size.width} grid-rows-${size.height}`" class="grid gap-1 grid-cols-12">
-        <template v-for="h in size.height">
-            <BoardTile v-for="w in size.width" :coordinates="{width: w, height: h}" :game="game" :moves="moves" />
-        </template>
-    </div>
+<template>
+  <div
+    v-if="board"
+    :class="gridClasses"
+    :style="gridStyle"
+    class="grid gap-1"
+  >
+    <template v-for="row in board.height" :key="`row-${row}`">
+      <BoardTile
+        v-for="col in board.width"
+        :key="`${col}-${row}`"
+        :tile-key="buildKey(col, row)"
+        :tile-info="board.tiles[buildKey(col, row)]"
+        :chain-class="chainClassFor(board.tiles[buildKey(col, row)])"
+        :disabled="!isPlayersTurn"
+        @play-tile="$emit('play-tile', $event)"
+      />
+    </template>
+  </div>
+  <div v-else class="text-sm text-gray-500">Board loading…</div>
 </template>
+
 <script>
-import { useAuthStore } from '../../stores/auth'
-import { useMovesStore } from '../../stores/moves'
 import BoardTile from './BoardTile.vue'
+import { getChainBoardClass } from '@/constants/chainColors'
 
 export default {
-    setup() {
-        const movesStore = useMovesStore()
-        const authStore = useAuthStore()
-        return { movesStore, authStore }
+  name: 'Board',
+  components: { BoardTile },
+  props: {
+    board: {
+      type: Object,
+      required: false,
+      default: null
     },
-    props: ['size', 'game', 'moves'],
-    components: {BoardTile},
+    currentPlayerId: {
+      type: String,
+      default: null
+    },
+    playerId: {
+      type: String,
+      default: null
+    },
+    chains: {
+      type: Array,
+      default: () => []
+    }
+  },
+  emits: ['play-tile'],
+  computed: {
+    gridClasses() {
+      if (!this.board) return ''
+      return ''
+    },
+    gridStyle() {
+      if (!this.board) return {}
+      return {
+        gridTemplateColumns: `repeat(${this.board.width}, minmax(0, 1fr))`,
+        gridTemplateRows: `repeat(${this.board.height}, minmax(0, 1fr))`
+      }
+    },
+    isPlayersTurn() {
+      if (!this.playerId) return false
+      return this.currentPlayerId === this.playerId
+    },
+    chainsById() {
+      return this.chains.reduce((acc, chain) => {
+        acc[chain.id] = chain
+        return acc
+      }, {})
+    }
+  },
+  methods: {
+    buildKey(column, rowNumber) {
+      const letter = String.fromCharCode('A'.charCodeAt(0) + (rowNumber - 1))
+      return `${column}-${letter}`
+    },
+    chainClassFor(tileInfo) {
+      if (!tileInfo?.chainId) return ''
+      const chain = this.chainsById[tileInfo.chainId]
+      if (!chain) return ''
+      return getChainBoardClass(chain.name)
+    }
+  }
 }
 </script>
-<style lang="">
-    
-</style>

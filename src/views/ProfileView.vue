@@ -35,18 +35,9 @@
     <main class="container mx-auto -mt-16 px-4">
         <div class="grid gap-4 grid-cols-2 md:grid-cols-4 xl:grid-cols-5 grid-rows-3 py-8">
             <div class="bg-white rounded-md px-6 pb-6 col-span-3 shadow-md">
-                <Profile :profile="user.profile" />
+                <Profile v-if="user && user.profile" :profile="user.profile" />
+                <p v-else class="text-sm text-gray-500">Loading profile…</p>
             </div>
         </div>
     </main>
-    <code class="bg-gray-900 block rounded text-xs p-4 m-4 text-white">
-        <pre>
-            {{ isMyProfile }}
-        </pre>
-    </code>
-    <code class="bg-gray-900 block rounded text-xs p-4 m-4 text-white mt-2">
-        <pre>
-            {{ user }}
-        </pre>
-    </code>
 </template>
