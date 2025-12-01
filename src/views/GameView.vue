@@ -5,6 +5,7 @@ import Board from '@/components/Game/Board.vue'
 import PlayerHand from '@/components/Game/PlayerHand.vue'
 import StockPanel from '@/components/Game/StockPanel.vue'
 import ChainDisplay from '@/components/Game/ChainDisplay.vue'
+import StockBuyingWidget from '@/components/Game/StockBuyingWidget.vue'
 import { usePlayersStore } from '@/stores/players'
 import { useGamesStore } from '@/stores/games'
 import { useGameStore } from '@/stores/game'
@@ -74,7 +75,16 @@ async function handleChainSelection(option) {
   await gameStore.startChain(option.id)
 }
 
-async function handleCompleteBuy() {
+async function handleBatchPurchase(purchases) {
+  // Process each purchase in sequence
+  for (const purchase of purchases) {
+    await gameStore.buyStock(purchase.chainName, purchase.shares)
+  }
+  // Then complete the stock purchase phase
+  await gameStore.completeStockPurchase()
+}
+
+async function handleSkipPurchase() {
   await gameStore.completeStockPurchase()
 }
 
@@ -207,24 +217,6 @@ watch(
                     </button>
                   </div>
                 </div>
-                <div
-                  v-if="pendingAction?.type === 'buy-stock'"
-                  class="mt-6 border-t border-gray-100 pt-4"
-                >
-                  <h3 class="mb-2 text-sm font-semibold text-gray-900">Buy stock</h3>
-                  <p class="text-sm text-gray-600 mb-3">
-                    You may purchase up to {{ pendingAction.remaining }} share(s) of any hotel currently on the board.
-                    Use the stock panel to buy, then click “Done” when you’re finished.
-                  </p>
-                  <div class="flex flex-wrap gap-2">
-                    <button
-                      class="px-4 py-2 rounded font-semibold text-xs shadow-sm text-gray-600 border border-gray-200 focus:outline-none focus:ring focus:ring-gray-200"
-                      @click="handleCompleteBuy"
-                    >
-                      Done buying
-                    </button>
-                  </div>
-                </div>
                 <div class="mt-6 border-t border-gray-100 pt-4">
                   <PlayerHand
                     :hand="playerView?.hand"
@@ -233,10 +225,29 @@ watch(
                     :embedded="true"
                     @play-tile="playTile"
                   />
+                  
+                  <div
+                    v-if="pendingAction?.type === 'buy-stock'"
+                    class="mt-4 pt-4 border-t border-gray-200"
+                  >
+                    <StockBuyingWidget
+                      :chains="publicState.chains"
+                      :max-shares="pendingAction.remaining || 3"
+                      :player-cash="playerView?.cash || 0"
+                      @purchase="handleBatchPurchase"
+                      @skip="handleSkipPurchase"
+                    />
+                  </div>
                 </div>
             </div>
             <ChainDisplay class="col-span-6 lg:col-span-2 lg:order-2" :chains="publicState.chains" />
-            <StockPanel class="col-span-6 lg:col-span-2 lg:order-3" :chains="publicState.chains" :can-buy="playerView?.needsAction" @buy-stock="buyStock" />
+            <StockPanel 
+              v-if="pendingAction?.type !== 'buy-stock'"
+              class="col-span-6 lg:col-span-2 lg:order-3" 
+              :chains="publicState.chains" 
+              :can-buy="playerView?.needsAction" 
+              @buy-stock="buyStock" 
+            />
             <div id="moves" class="card flex flex-col col-span-6 lg:col-span-2 lg:order-2 row-span-4 lg:h-4/6">
                 <h2 class="mt-4 mb-4">Moves</h2>
                 <div class="flow-root md:overflow-y-auto md:overflow-hidden">
