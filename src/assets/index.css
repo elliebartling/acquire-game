@@ -27,7 +27,7 @@ h2 {
 }
 
 .card {
-    @apply bg-white rounded-md px-6 pb-6 shadow-md;
+    @apply bg-white rounded-md px-4 pb-4 shadow-md;
 }
 
 

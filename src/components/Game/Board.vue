@@ -3,7 +3,7 @@
     v-if="board"
     :class="gridClasses"
     :style="gridStyle"
-    class="grid gap-1"
+    class="grid gap-0.5 sm:gap-1 max-w-full"
   >
     <template v-for="row in board.height" :key="`row-${row}`">
       <BoardTile

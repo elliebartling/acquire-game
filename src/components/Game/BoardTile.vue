@@ -1,6 +1,6 @@
 <template>
   <button
-    class="tile text-xs xl:text-base"
+    class="tile text-[10px] sm:text-xs lg:text-sm"
     :class="variantClasses"
     :disabled="disabled || Boolean(tileInfo)"
     @click="handleClick"

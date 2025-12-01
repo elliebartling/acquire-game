@@ -6,6 +6,7 @@ import PlayerHand from '@/components/Game/PlayerHand.vue'
 import StockPanel from '@/components/Game/StockPanel.vue'
 import ChainDisplay from '@/components/Game/ChainDisplay.vue'
 import StockBuyingWidget from '@/components/Game/StockBuyingWidget.vue'
+import Scoreboard from '@/components/Game/Scoreboard.vue'
 import { usePlayersStore } from '@/stores/players'
 import { useGamesStore } from '@/stores/games'
 import { useGameStore } from '@/stores/game'
@@ -32,6 +33,18 @@ const realtimeLogs = computed(() => gameStore.realtimeLogs)
 const currentPlayerId = computed(() => publicState.value?.currentPlayerId)
 
 const currentGame = computed(() => gamesStore.gameById(gameId.value))
+
+const usernameMap = computed(() => {
+  const map = {}
+  if (publicState.value?.players) {
+    publicState.value.players.forEach(player => {
+      // Try to get username from public state first, then fall back to playersStore
+      const username = player.username || usernameFor(player.id)
+      map[player.id] = username
+    })
+  }
+  return map
+})
 
 function slugToTitle(slug) {
   return slug.replace('-', ' ')
@@ -154,18 +167,16 @@ watch(
             </div>
         </div>
     </header>
-    <main v-if="publicState" class="container mx-auto px-4 py-6 space-y-6">
-        <div id="grid" class="grid gap-4 lg:gap-6 grid-cols-6 lg:grid-rows-6">
-            <div id="scores" class="card col-span-6 lg:col-span-2 lg:order-1 shadow-md lg:row-span-1 w-full">
-                <h2 class="mt-4 mb-4">Scores</h2>
-                <ul class="space-y-2">
-                    <li v-for="player in publicState.players" :key="player.id" class="flex justify-between text-sm">
-                        <span class="font-medium text-gray-900">{{ usernameFor(player.id) }}</span>
-                        <span class="text-gray-600">${{ player.netWorth?.toLocaleString?.() || player.netWorth }}</span>
-                    </li>
-                </ul>
-            </div>
-            <div id="board" class="card col-span-6 lg:col-span-4 lg:order-0 lg:row-span-4 w-full pt-6 -top-8 relative">
+    <main v-if="publicState" class="container mx-auto relative -top-6 px-3 py-3 max-w-[1600px]">
+        <div id="grid" class="grid gap-3 grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_1fr]">
+            <Scoreboard 
+              class="col-span-1 lg:col-span-4 w-full order-1 lg:order-1"
+              :players="publicState.players"
+              :chains="publicState.chains"
+              :current-player-id="currentPlayerId"
+              :username-map="usernameMap"
+            />
+            <div id="board" class="card col-span-1 lg:col-span-6 w-full pt-4 order-0 lg:order-0 lg:row-span-2">
                 <Board
                     :board="publicState.board"
                     :chains="publicState.chains"
@@ -177,18 +188,18 @@ watch(
                 />
                 <div
                   v-if="pendingAction?.type === 'start-chain'"
-                  class="mt-6 border-t border-gray-100 pt-4"
+                  class="mt-4 border-t border-gray-100 pt-3"
                 >
-                  <h3 class="mb-2 text-sm font-semibold text-gray-900">Form a hotel</h3>
-                  <p class="text-sm text-gray-600 mb-3">
+                  <h3 class="mb-2 text-xs font-semibold text-gray-900">Form a hotel</h3>
+                  <p class="text-xs text-gray-600 mb-2">
                     Choose a chain for tiles
                     <span class="font-medium text-gray-900">{{ pendingAction.tiles.join(', ') }}</span>
                   </p>
-                  <div class="flex flex-wrap gap-2">
+                  <div class="flex flex-wrap gap-1.5">
                     <button
                       v-for="option in pendingAction.options"
                       :key="option.id"
-                      class="px-4 py-2 rounded font-semibold text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                      class="px-3 py-1.5 rounded font-semibold text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                       :class="chainClasses(option.name)"
                       @click="handleChainSelection(option)"
                     >
@@ -198,18 +209,18 @@ watch(
                 </div>
                 <div
                   v-if="pendingAction?.type === 'resolve-merger'"
-                  class="mt-6 border-t border-gray-100 pt-4"
+                  class="mt-4 border-t border-gray-100 pt-3"
                 >
-                  <h3 class="mb-2 text-sm font-semibold text-gray-900">Resolve merger</h3>
-                  <p class="text-sm text-gray-600 mb-3">
+                  <h3 class="mb-2 text-xs font-semibold text-gray-900">Resolve merger</h3>
+                  <p class="text-xs text-gray-600 mb-2">
                     You have multiple bonded hotels touching <span class="font-medium text-gray-900">{{ pendingAction.tile }}</span>.
                     Choose which hotel survives.
                   </p>
-                  <div class="flex flex-wrap gap-2">
+                  <div class="flex flex-wrap gap-1.5">
                     <button
                       v-for="option in pendingAction.options"
                       :key="option.id"
-                      class="px-4 py-2 rounded font-semibold text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                      class="px-3 py-1.5 rounded font-semibold text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                       :class="chainClasses(option.name)"
                       @click="handleMergerSelection(option)"
                     >
@@ -217,7 +228,7 @@ watch(
                     </button>
                   </div>
                 </div>
-                <div class="mt-6 border-t border-gray-100 pt-4">
+                <div class="mt-4 border-t border-gray-100 pt-3">
                   <PlayerHand
                     :hand="playerView?.hand"
                     :hand-hints="handTileHints"
@@ -228,7 +239,7 @@ watch(
                   
                   <div
                     v-if="pendingAction?.type === 'buy-stock'"
-                    class="mt-4 pt-4 border-t border-gray-200"
+                    class="mt-3 pt-3 border-t border-gray-200"
                   >
                     <StockBuyingWidget
                       :chains="publicState.chains"
@@ -240,17 +251,9 @@ watch(
                   </div>
                 </div>
             </div>
-            <ChainDisplay class="col-span-6 lg:col-span-2 lg:order-2" :chains="publicState.chains" />
-            <StockPanel 
-              v-if="pendingAction?.type !== 'buy-stock'"
-              class="col-span-6 lg:col-span-2 lg:order-3" 
-              :chains="publicState.chains" 
-              :can-buy="playerView?.needsAction" 
-              @buy-stock="buyStock" 
-            />
-            <div id="moves" class="card flex flex-col col-span-6 lg:col-span-2 lg:order-2 row-span-4 lg:h-4/6">
-                <h2 class="mt-4 mb-4">Moves</h2>
-                <div class="flow-root md:overflow-y-auto md:overflow-hidden">
+            <div id="moves" class="card flex flex-col col-span-1 lg:col-span-2 order-2 lg:order-2 max-h-[600px]">
+                <h2 class="mt-3 mb-3 text-base">Moves</h2>
+                <div class="flow-root overflow-y-auto flex-1">
                     <ul class="-mb-4">
                         <li v-for="move in moves" :key="move.created_at || move.move_value">
                             <div class="relative pb-4">
@@ -289,8 +292,9 @@ watch(
                 </div>
             </div>
         </div>
-        <h2 class="mt-10 mb-2 text-sm font-semibold text-gray-500">Realtime Events</h2>
-        <div class="bg-gray-900 rounded text-xs p-4 text-white overflow-auto max-h-64">
+        <details class="mt-6">
+          <summary class="cursor-pointer text-sm font-semibold text-gray-500 mb-2">Realtime Events (Debug)</summary>
+          <div class="bg-gray-900 rounded text-xs p-4 text-white overflow-auto max-h-64">
             <div v-if="realtimeLogs.length === 0" class="text-gray-500">No realtime events yet...</div>
             <div v-for="(log, index) in realtimeLogs" :key="index" class="mb-2 border-b border-gray-800 pb-2">
                 <div class="flex items-center gap-2 mb-1">
@@ -301,9 +305,12 @@ watch(
                 </div>
                 <pre class="text-gray-300">{{ JSON.stringify(log.data, null, 2) }}</pre>
             </div>
-        </div>
-        <h2 class="mt-6 mb-2 text-sm font-semibold text-gray-500">Debug</h2>
-        <code class="bg-gray-900 block rounded text-xs p-4 text-white block overflow-auto"><pre>{{ publicState }}</pre></code>
+          </div>
+        </details>
+        <details class="mt-4">
+          <summary class="cursor-pointer text-sm font-semibold text-gray-500 mb-2">Game State (Debug)</summary>
+          <code class="bg-gray-900 block rounded text-xs p-4 text-white block overflow-auto"><pre>{{ publicState }}</pre></code>
+        </details>
     </main>
 </template>
 <style>

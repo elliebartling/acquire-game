@@ -2,14 +2,14 @@
   <div :class="wrapperClass">
     <component
       :is="embedded ? 'div' : 'h2'"
-      :class="embedded ? 'text-sm font-semibold text-gray-900 mb-2' : 'mt-4 mb-4 text-lg font-semibold text-gray-900'"
+      :class="embedded ? 'text-sm font-semibold text-gray-900 mb-2' : 'mt-3 mb-3 text-base font-semibold text-gray-900'"
     >
       Your hand
     </component>
-    <div v-if="!hand || hand.length === 0" class="text-sm text-gray-500">
+    <div v-if="!hand || hand.length === 0" class="text-xs text-gray-500">
       No tiles in hand yet.
     </div>
-    <div class="flex flex-wrap gap-2">
+    <div class="flex flex-wrap gap-1.5">
       <button
         v-for="entry in handEntries"
         :key="entry.key"
@@ -108,7 +108,7 @@ export default {
 
 <style scoped lang="postcss">
 .hand-tile {
-  @apply rounded border border-gray-200 px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:ring-2 hover:ring-gray-300 focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:outline-none;
+  @apply rounded border border-gray-200 px-2.5 py-1.5 text-xs font-medium shadow-sm transition-colors hover:ring-2 hover:ring-gray-300 focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:outline-none;
 }
 .hand-tile--neutral {
   @apply bg-white text-gray-800 hover:bg-gray-50;

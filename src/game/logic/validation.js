@@ -15,7 +15,7 @@ export function validateStockPurchase({ player, chain, shares }) {
   if (!chain) {
     return { valid: false, reason: 'missing-chain' }
   }
-  const price = calculateStockPrice(chain.size || 0)
+  const price = calculateStockPrice(chain.size || 0, chain.name)
   if (player.cash < price * shares) {
     return { valid: false, reason: 'insufficient-cash' }
   }

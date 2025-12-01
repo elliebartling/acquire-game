@@ -139,6 +139,7 @@ function ensurePlayerRecords(
   gameState: GameStateRecord,
   playerIds: string[],
   config: Required<BoardConfig>,
+  usernameMap?: Map<string, string>,
 ): EnsureResult {
   if (!Array.isArray(gameState.players)) {
     gameState.players = [];
@@ -158,10 +159,11 @@ function ensurePlayerRecords(
   let changed = false;
   const normalized: PlayerStateRecord[] = ids.map((id) => {
     let player = existingById.get(id);
+    const username = usernameMap?.get(id) ?? "";
     if (!player) {
       player = {
         id,
-        username: "",
+        username,
         cash: startingCash,
         netWorth: startingCash,
         stocks: {},
@@ -193,6 +195,11 @@ function ensurePlayerRecords(
       }
       if (!player.metadata) {
         player.metadata = {};
+        changed = true;
+      }
+      // Update username if it's missing and we have one
+      if (!player.username && username) {
+        player.username = username;
         changed = true;
       }
     }
@@ -237,11 +244,12 @@ export function ensureHandsAndBag(
   gameState: GameStateRecord | null,
   boardConfig?: BoardConfig | null,
   playerIds: string[] = [],
+  usernameMap?: Map<string, string>,
 ): EnsureResult {
   if (!gameState) return { changed: false };
   const resolvedConfig = mergeConfig(gameState, boardConfig);
   const boardResult = ensureBoardShape(gameState, resolvedConfig);
-  const playerResult = ensurePlayerRecords(gameState, playerIds, resolvedConfig);
+  const playerResult = ensurePlayerRecords(gameState, playerIds, resolvedConfig, usernameMap);
   const bagResult = ensureTileBagInternal(gameState, resolvedConfig);
   const handResult = topUpHandsInternal(gameState, resolvedConfig);
   return {

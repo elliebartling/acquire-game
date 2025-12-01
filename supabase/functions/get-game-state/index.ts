@@ -13,6 +13,80 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
+// Hotel chain pricing tiers based on official Acquire rules
+const CHAIN_TIERS: Record<string, number> = {
+  // Budget tier (Tier 0) - Tower, Luxor
+  'Tower': 0,
+  'Luxor': 0,
+  // Mid-tier (Tier 1) - American, Worldwide, Festival
+  'American': 1,
+  'Worldwide': 1,
+  'Festival': 1,
+  // Luxury tier (Tier 2) - Imperial, Continental
+  'Imperial': 2,
+  'Continental': 2,
+  // Legacy support
+  'Sackson': 0
+};
+
+// Base prices by chain size
+const SIZE_PRICE_TABLE = [
+  { maxSize: 2, basePrice: 200 },
+  { maxSize: 3, basePrice: 300 },
+  { maxSize: 4, basePrice: 400 },
+  { maxSize: 5, basePrice: 500 },
+  { maxSize: 10, basePrice: 600 },
+  { maxSize: 20, basePrice: 700 },
+  { maxSize: 30, basePrice: 800 },
+  { maxSize: 40, basePrice: 900 },
+  { maxSize: Infinity, basePrice: 1000 }
+];
+
+function calculateStockPrice(chainSize: number, chainName?: string | null): number {
+  // Get base price from size
+  const sizeEntry = SIZE_PRICE_TABLE.find((entry) => chainSize <= entry.maxSize) ||
+    SIZE_PRICE_TABLE[SIZE_PRICE_TABLE.length - 1];
+  const basePrice = sizeEntry.basePrice;
+  
+  // Add tier premium if chain name is provided
+  if (chainName && CHAIN_TIERS[chainName] !== undefined) {
+    const tierPremium = CHAIN_TIERS[chainName] * 100;
+    return basePrice + tierPremium;
+  }
+  
+  // Fallback to base price if no chain name
+  return basePrice;
+}
+
+/**
+ * Calculate the net worth of a player (cash + value of stocks)
+ * Stocks for chains not on the board (size = 0) have no value
+ */
+function calculateNetWorth(
+  player: any,
+  chains: any[]
+): number {
+  let netWorth = player.cash || 0;
+  
+  // Add value of all stocks
+  if (player.stocks && chains) {
+    Object.entries(player.stocks).forEach(([chainName, shares]) => {
+      if (shares as number > 0) {
+        // Find the chain to get its size
+        const chain = chains.find((c: any) => c.name === chainName);
+        const chainSize = chain ? (chain.tiles?.length || 0) : 0;
+        if (chain && chainSize > 0) {
+          const price = calculateStockPrice(chainSize, chainName);
+          netWorth += price * (shares as number);
+        }
+        // If chain is not on board (size = 0), stock has no value
+      }
+    });
+  }
+  
+  return netWorth;
+};
+
 serve(async (req: Request) => {
   if (req.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
@@ -80,12 +154,23 @@ serve(async (req: Request) => {
     const playerIds = Array.isArray(data.players)
       ? (data.players as string[])
       : [];
+    
+    // Fetch player usernames from profiles
+    const { data: profiles } = await adminClient
+      .from("profiles")
+      .select("id, username")
+      .in("id", playerIds);
+    
+    const usernameMap = new Map(
+      (profiles ?? []).map((p) => [p.id, p.username ?? "Unknown"])
+    );
+    
     const playerRecords = playerIds.map((id) => ({ id }));
     
     let needsUpdate = false;
     
-    // Ensure hands and bag
-    const ensureResult = ensureHandsAndBag(rawGameState, boardConfig, playerIds);
+    // Ensure hands and bag (with usernames)
+    const ensureResult = ensureHandsAndBag(rawGameState, boardConfig, playerIds, usernameMap);
     if (ensureResult.changed) {
       needsUpdate = true;
     }
@@ -97,12 +182,34 @@ serve(async (req: Request) => {
       needsUpdate = true;
     }
     
-    // Update public_state with currentPlayerId
+    // Rebuild public_state from game_state to ensure all players are included
     const currentPlayerId = getCurrentPlayerId(rawGameState);
     const rawPublicState = data.public_state ?? {};
-    if (rawPublicState.currentPlayerId !== currentPlayerId) {
-      rawPublicState.currentPlayerId = currentPlayerId;
-      needsUpdate = true;
+    
+    // Ensure public_state has all players from game_state
+    if (Array.isArray(rawGameState.players)) {
+      const chains = rawGameState.chains ?? [];
+      const publicPlayers = rawGameState.players.map((player: any) => {
+        // Recalculate net worth based on cash + stock value
+        const netWorth = calculateNetWorth(player, chains);
+        return {
+          id: player.id,
+          username: player.username ?? "",
+          cash: player.cash ?? 0,
+          netWorth,
+          stocks: player.stocks ?? {},
+          loans: player.loans ?? 0,
+        };
+      });
+      
+      // Check if public_state needs updating
+      if (!rawPublicState.players || 
+          rawPublicState.players.length !== publicPlayers.length ||
+          rawPublicState.currentPlayerId !== currentPlayerId) {
+        rawPublicState.players = publicPlayers;
+        rawPublicState.currentPlayerId = currentPlayerId;
+        needsUpdate = true;
+      }
     }
     
     if (needsUpdate) {
