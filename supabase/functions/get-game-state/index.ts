@@ -4,6 +4,10 @@ import {
   ensureHandsAndBag,
   sanitizeGameState,
 } from "../_shared/gameState.ts";
+import {
+  ensureTurnStructure,
+  getCurrentPlayerId,
+} from "../_shared/turns.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -76,11 +80,38 @@ serve(async (req: Request) => {
     const playerIds = Array.isArray(data.players)
       ? (data.players as string[])
       : [];
+    const playerRecords = playerIds.map((id) => ({ id }));
+    
+    let needsUpdate = false;
+    
+    // Ensure hands and bag
     const ensureResult = ensureHandsAndBag(rawGameState, boardConfig, playerIds);
     if (ensureResult.changed) {
+      needsUpdate = true;
+    }
+    
+    // Ensure turn structure
+    const turnResult = ensureTurnStructure(rawGameState, playerRecords);
+    if (turnResult.updated) {
+      Object.assign(rawGameState, turnResult.state);
+      needsUpdate = true;
+    }
+    
+    // Update public_state with currentPlayerId
+    const currentPlayerId = getCurrentPlayerId(rawGameState);
+    const rawPublicState = data.public_state ?? {};
+    if (rawPublicState.currentPlayerId !== currentPlayerId) {
+      rawPublicState.currentPlayerId = currentPlayerId;
+      needsUpdate = true;
+    }
+    
+    if (needsUpdate) {
       const { error: stateUpdateError } = await adminClient
         .from("games")
-        .update({ game_state: rawGameState })
+        .update({ 
+          game_state: rawGameState,
+          public_state: rawPublicState 
+        })
         .eq("id", game_id);
       if (stateUpdateError) {
         console.error(stateUpdateError);
@@ -93,7 +124,7 @@ serve(async (req: Request) => {
 
     const payload = {
       id: data.id,
-      public_state: data.public_state,
+      public_state: rawPublicState,
       board_config: data.board_config,
       rules: data.rules,
       status: data.status,

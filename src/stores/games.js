@@ -11,11 +11,23 @@ export const useGamesStore = defineStore({
   id: 'games',
   state: () => ({
     all: [],
-    currentGame: null
+    currentGame: null,
+    subscription: null,
+    pollInterval: null
   }),
   getters: {
     allGames(state) {
         return state.all.filter((game) => game.public)
+    },
+    lobbyGames(state) {
+        const sorted = [...state.all]
+          .filter((game) => game.public && game.status !== 'completed')
+          .sort((first, second) => {
+            const firstDate = new Date(first.created_at).getTime()
+            const secondDate = new Date(second.created_at).getTime()
+            return secondDate - firstDate
+          })
+        return sorted
     },
     gameById(state) {
         return (gameId) => state.all.find((game) => game.id === gameId)
@@ -41,9 +53,15 @@ export const useGamesStore = defineStore({
       if (error) throw error
       this.currentGame = data
       
+      // Subscribe to game updates
       const gameSubscription = supabase
-        .from(`games:id=eq.${id}`)
-        .on("UPDATE", payload => {
+        .channel(`game-details-${id}`)
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'games',
+          filter: `id=eq.${id}`
+        }, (payload) => {
           this.currentGame = payload.new
         })
         .subscribe()
@@ -78,21 +96,65 @@ export const useGamesStore = defineStore({
       return data
     },
     async loadRecentGames() {
+      await this.fetchLobbyGames()
+      this.listenForNewGames()
+      this.startLobbyPolling()
+    },
+    async fetchLobbyGames() {
       const { data: games, error } = await supabase
         .from('games')
-        .select('id, public_state, players, rules, status, number_of_seats, created_at')
+        .select('id, public_state, players, rules, status, number_of_seats, created_at, public')
+        .eq('public', true)
         .order('created_at', { ascending: false })
       if (error) throw error
       this.all = games || []
-      this.listenForNewGames()
     },
     listenForNewGames() {
-      const gameSubscription = supabase
-        .from('games')
-        .on('INSERT', payload => {
+      if (this.subscription) {
+        supabase.removeChannel(this.subscription)
+        this.subscription = null
+      }
+      this.subscription = supabase
+        .channel('lobby-games')
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'games'
+        }, (payload) => {
+          const isPublic = payload.new?.public ?? true
+          if (!isPublic) return
+          const duplicate = this.all.find((game) => game.id === payload.new.id)
+          if (duplicate) return
           this.all.unshift(payload.new)
         })
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'games'
+        }, (payload) => {
+          const isPublic = payload.new?.public ?? true
+          if (!isPublic) return
+          const index = this.all.findIndex((game) => game.id === payload.new.id)
+          if (index > -1) {
+            this.all.splice(index, 1, payload.new)
+          } else {
+            this.all.unshift(payload.new)
+          }
+        })
         .subscribe()
+    },
+    startLobbyPolling() {
+      if (this.pollInterval) return
+      this.pollInterval = setInterval(() => {
+        this.fetchLobbyGames().catch((err) => {
+          console.error('[games] failed to refresh lobby', err)
+        })
+      }, 5000)
+    },
+    stopLobbyPolling() {
+      if (!this.pollInterval) return
+      clearInterval(this.pollInterval)
+      this.pollInterval = null
     },
     getNewHand(playerId) {
       console.log('Getting new hand', playerId, this.currentGame.id)

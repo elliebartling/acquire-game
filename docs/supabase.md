@@ -6,12 +6,13 @@ changes.
 
 ## 1. Configure Environment Variables
 
-Add the following to your `.env.local` (or equivalent). These are already
-referenced inside the Edge Functions:
+Add the following to your `.env.local` (or equivalent) so the client points at
+the local stack during development. If the file is missing, the app now defaults
+to the `supabase start` values thanks to the helpers in `src/supabase.js`.
 
 ```
-VITE_SUPABASE_URL=...
-VITE_SUPABASE_ANON_KEY=...
+VITE_SUPABASE_URL=http://127.0.0.1:54321
+VITE_SUPABASE_ANON_KEY=sb_publishable_local_example
 VITE_REDIRECT_URL=http://localhost:5173
 ```
 
@@ -64,7 +65,7 @@ supabase start
 supabase functions serve validate-move
 ```
 
-Point your web app to `http://localhost:54321` (default Supabase URL) and log
+Point your web app at `http://localhost:54321` (default Supabase URL) and log
 in so that `Authorization` headers are attached automatically by Supabase JS.
 
 ## 5. Troubleshooting

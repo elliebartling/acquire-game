@@ -81,7 +81,7 @@ export default {
       }
       try {
         loading.value = true
-        const { error } = await supabase.auth.signIn({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email: email.value,
           password: password.value
         })
@@ -95,7 +95,7 @@ export default {
           throw error
         }
 
-        const { session: signUpSession, error: signUpError } = await supabase.auth.signUp({
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email: email.value,
           password: password.value
         })
@@ -108,7 +108,7 @@ export default {
         }
 
         password.value = ""
-        if (signUpSession) {
+        if (signUpData?.session) {
           await authStore.loadUser()
           alert("Account created and signed in!")
         } else {
@@ -128,8 +128,11 @@ export default {
       }
       try {
         loading.value = true
-        const { error } = await supabase.auth.signIn({ email: email.value }, {
-          redirectTo: import.meta.env.VITE_REDIRECT_URL
+        const { error } = await supabase.auth.signInWithOtp({
+          email: email.value,
+          options: {
+            emailRedirectTo: import.meta.env.VITE_REDIRECT_URL
+          }
         })
         console.log('redirect url auth', import.meta.env.VITE_REDIRECT_URL)
         if (error) throw error

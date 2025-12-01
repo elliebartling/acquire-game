@@ -80,6 +80,11 @@ export function buildTileHints(hand = [], board = null, chains = []) {
     }
     const neighborChains = collectNeighborChains(normalizedKey, board, chainsById)
     if (neighborChains.length >= 2) {
+      const allSafe = neighborChains.every((chain) => chain.isSafe)
+      if (allSafe) {
+        hints[normalizedKey] = { status: 'blocked' }
+        return
+      }
       hints[normalizedKey] = {
         status: 'merge',
         chains: neighborChains

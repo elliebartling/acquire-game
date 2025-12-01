@@ -42,11 +42,25 @@
                 return usePlayersStore().playerById(this.game.players[0])
             },
             timeStarted() {
-                console.log(this.game.created_at)
                 return timeAgo.format(Date.parse(this.game.created_at), { future: false })
             },
             isFull() {
               return !(this.game.players.length < this.game.number_of_seats)
+            },
+            phaseLabel() {
+              return this.game.public_state?.phase || this.game.status || 'waiting'
+            },
+            phaseBadgeClass() {
+              if (this.phaseLabel === 'setup') {
+                return 'bg-amber-100 text-amber-800 border-amber-200'
+              }
+              if (this.phaseLabel === 'active') {
+                return 'bg-emerald-100 text-emerald-800 border-emerald-200'
+              }
+              return 'bg-sky-100 text-sky-800 border-sky-200'
+            },
+            statusLabel() {
+              return this.game.status ? this.game.status.replace('-', ' ') : ''
             }
         }
     }
@@ -73,6 +87,17 @@
                   started a new game
                   <span class="whitespace-nowrap">{{ timeStarted }}</span>
                 </span>
+                <div class="mt-2 flex flex-wrap gap-2 text-[0.65rem]">
+                  <span class="rounded-full border px-2 py-1 font-semibold tracking-widest uppercase" :class="phaseBadgeClass">
+                    {{ phaseLabel }}
+                  </span>
+                  <span
+                    v-if="statusLabel"
+                    class="rounded-full border border-gray-200 bg-gray-100 px-2 py-1 font-semibold tracking-widest uppercase text-gray-700"
+                  >
+                    {{ statusLabel }}
+                  </span>
+                </div>
                 <span class="mr-0.5">
                   <div class="relative inline-flex items-center rounded-full border border-gray-300 px-3 py-0.5 text-sm mr-2">
                     <span class="absolute flex-shrink-0 flex items-center justify-center">

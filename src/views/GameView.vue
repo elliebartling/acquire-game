@@ -27,6 +27,8 @@ const pendingAction = computed(() => playerView.value?.pendingAction || null)
 const handTileHints = computed(() =>
   buildTileHints(playerView.value?.hand || [], publicState.value?.board, publicState.value?.chains)
 )
+const realtimeLogs = computed(() => gameStore.realtimeLogs)
+const currentPlayerId = computed(() => publicState.value?.currentPlayerId)
 
 const currentGame = computed(() => gamesStore.gameById(gameId.value))
 
@@ -72,6 +74,15 @@ async function handleChainSelection(option) {
   await gameStore.startChain(option.id)
 }
 
+async function handleCompleteBuy() {
+  await gameStore.completeStockPurchase()
+}
+
+async function handleMergerSelection(option) {
+  if (!option?.id) return
+  await gameStore.resolveMerger(option.id)
+}
+
 function chainClasses(name) {
   return getChainButtonClass(name)
 }
@@ -115,15 +126,21 @@ watch(
                     <span v-else class="rounded-full bg-gray-800 px-3 py-1">Standard</span>
                 </div>
             </div>
-            <div class="flex flex-wrap items-center gap-2 text-sm text-gray-200">
-                <span class="text-gray-400">Players:</span>
-                <span
-                  v-for="(player, index) in currentGame.players"
-                  :key="player"
-                  class="font-medium"
-                >
-                    {{ usernameFor(player) }}<span v-if="index < currentGame.players.length - 1">,</span>
-                </span>
+            <div class="flex flex-wrap items-center gap-4 text-sm text-gray-200">
+                <div class="flex items-center gap-2">
+                    <span class="text-gray-400">Players:</span>
+                    <span
+                      v-for="(player, index) in currentGame.players"
+                      :key="player"
+                      class="font-medium"
+                    >
+                        {{ usernameFor(player) }}<span v-if="index < currentGame.players.length - 1">,</span>
+                    </span>
+                </div>
+                <div v-if="currentPlayerId" class="flex items-center gap-2 border-l border-gray-700 pl-4">
+                    <span class="text-gray-400">Current turn:</span>
+                    <span class="font-semibold text-white">{{ usernameFor(currentPlayerId) }}</span>
+                </div>
             </div>
         </div>
     </header>
@@ -166,6 +183,45 @@ watch(
                       @click="handleChainSelection(option)"
                     >
                       {{ option.name }}
+                    </button>
+                  </div>
+                </div>
+                <div
+                  v-if="pendingAction?.type === 'resolve-merger'"
+                  class="mt-6 border-t border-gray-100 pt-4"
+                >
+                  <h3 class="mb-2 text-sm font-semibold text-gray-900">Resolve merger</h3>
+                  <p class="text-sm text-gray-600 mb-3">
+                    You have multiple bonded hotels touching <span class="font-medium text-gray-900">{{ pendingAction.tile }}</span>.
+                    Choose which hotel survives.
+                  </p>
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      v-for="option in pendingAction.options"
+                      :key="option.id"
+                      class="px-4 py-2 rounded font-semibold text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                      :class="chainClasses(option.name)"
+                      @click="handleMergerSelection(option)"
+                    >
+                      {{ option.name }}
+                    </button>
+                  </div>
+                </div>
+                <div
+                  v-if="pendingAction?.type === 'buy-stock'"
+                  class="mt-6 border-t border-gray-100 pt-4"
+                >
+                  <h3 class="mb-2 text-sm font-semibold text-gray-900">Buy stock</h3>
+                  <p class="text-sm text-gray-600 mb-3">
+                    You may purchase up to {{ pendingAction.remaining }} share(s) of any hotel currently on the board.
+                    Use the stock panel to buy, then click “Done” when you’re finished.
+                  </p>
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      class="px-4 py-2 rounded font-semibold text-xs shadow-sm text-gray-600 border border-gray-200 focus:outline-none focus:ring focus:ring-gray-200"
+                      @click="handleCompleteBuy"
+                    >
+                      Done buying
                     </button>
                   </div>
                 </div>
@@ -222,7 +278,20 @@ watch(
                 </div>
             </div>
         </div>
-        <h2 class="mt-10 mb-2 text-sm font-semibold text-gray-500">Debug</h2>
+        <h2 class="mt-10 mb-2 text-sm font-semibold text-gray-500">Realtime Events</h2>
+        <div class="bg-gray-900 rounded text-xs p-4 text-white overflow-auto max-h-64">
+            <div v-if="realtimeLogs.length === 0" class="text-gray-500">No realtime events yet...</div>
+            <div v-for="(log, index) in realtimeLogs" :key="index" class="mb-2 border-b border-gray-800 pb-2">
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-gray-500">{{ new Date(log.timestamp).toLocaleTimeString() }}</span>
+                    <span class="font-semibold" :class="log.source === 'broadcast' ? 'text-green-400' : 'text-blue-400'">
+                        {{ log.source }}
+                    </span>
+                </div>
+                <pre class="text-gray-300">{{ JSON.stringify(log.data, null, 2) }}</pre>
+            </div>
+        </div>
+        <h2 class="mt-6 mb-2 text-sm font-semibold text-gray-500">Debug</h2>
         <code class="bg-gray-900 block rounded text-xs p-4 text-white block overflow-auto"><pre>{{ publicState }}</pre></code>
     </main>
 </template>

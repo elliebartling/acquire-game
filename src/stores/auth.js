@@ -26,28 +26,27 @@ export const useAuthStore = defineStore({
     // isAuthenticated: !!this.user
   },
   actions: {
-    loadUser() {
-        this.user = supabase.auth.user();
+    async loadUser() {
+        const { data: { user } } = await supabase.auth.getUser()
+        this.user = user
         // ToDo: hook this up to database
     },
     async login(data) {
-      const { user, error } = await supabase.auth.signIn(data, {
-        redirectTo: import.meta.env.VITE_REDIRECT_URL
-      })
+      const { data: { user }, error } = await supabase.auth.signInWithPassword(data)
       console.log('redirect url', import.meta.env.VITE_REDIRECT_URL)
-      this.user = supabase.auth.user()
+      if (error) {
+        console.error('Login error:', error)
+        throw error
+      }
+      this.user = user
     },
     async getAvatarUrl(path) {
       if (!path) return ''
       if (path.startsWith('data:') || path.startsWith('http')) {
         return path
       }
-      const { data, publicURL, error } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path)
-      if (error) {
-        console.warn('[avatars] Unable to fetch public URL:', error.message)
-        return ''
-      }
-      return publicURL || data?.publicUrl || data?.publicURL || ''
+      const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path)
+      return data?.publicUrl || ''
     },
     async loadUserProfile() {
       if (!this.user?.id) return

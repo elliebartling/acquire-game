@@ -109,3 +109,5 @@ export const generateAvatarAssets = async ({ seed, options }) => {
 
 export const getDicebearStyleName = () => STYLE_NAME
 
+
+

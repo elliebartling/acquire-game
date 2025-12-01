@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/supabase'
 import { GameStateSerializer } from '@/game/persistence/GameStateSerializer'
 import { MoveHistory } from '@/game/persistence/MoveHistory'
+import { GAME_CHANNEL_TOPIC, GAME_EVENTS } from '@/game/realtime'
 
 export const useGameStore = defineStore({
   id: 'game',
@@ -15,7 +16,9 @@ export const useGameStore = defineStore({
     moveHistory: new MoveHistory(),
     serializer: new GameStateSerializer(),
     subscription: null,
-    playerId: null
+    broadcastChannel: null,
+    playerId: null,
+    realtimeLogs: []
   }),
   getters: {
     board(state) {
@@ -39,6 +42,7 @@ export const useGameStore = defineStore({
         this.applyPayload(payload, playerId)
         this.loading = false
         this.subscribeToGame(gameId, playerId)
+        this.subscribeToBroadcastChannel(gameId, playerId)
       } catch (err) {
         console.error(err)
         this.error = err
@@ -70,20 +74,92 @@ export const useGameStore = defineStore({
     },
     subscribeToGame(gameId, playerId) {
       if (this.subscription) {
-        supabase.removeSubscription(this.subscription)
+        supabase.removeChannel(this.subscription)
+        this.subscription = null
       }
       this.subscription = supabase
-        .from(`games:id=eq.${gameId}`)
-        .on('UPDATE', async () => {
+        .channel(`postgres-changes-${gameId}`)
+        .on('postgres_changes', { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'games',
+          filter: `id=eq.${gameId}`
+        }, async (payload) => {
           try {
-            const payload = await this.fetchGameState(gameId, playerId)
-            this.applyPayload(payload, playerId)
+            this.logRealtimeEvent('postgres', { type: 'UPDATE', gameId, payload })
+            const gamePayload = await this.fetchGameState(gameId, playerId)
+            this.applyPayload(gamePayload, playerId)
           } catch (err) {
             console.error(err)
             this.error = err
           }
         })
         .subscribe()
+    },
+    subscribeToBroadcastChannel(gameId, playerId) {
+      // Check if supabase client has channel support
+      if (!supabase || typeof supabase.channel !== 'function') {
+        console.error('Supabase client does not support channels. Check your Supabase client initialization.')
+        this.logRealtimeEvent('error', { message: 'Supabase client missing channel support' })
+        return
+      }
+
+      if (this.broadcastChannel) {
+        supabase.removeChannel(this.broadcastChannel)
+        this.broadcastChannel = null
+      }
+
+      const channelName = GAME_CHANNEL_TOPIC(gameId)
+      console.log('Subscribing to broadcast channel:', channelName)
+
+      const channel = supabase.channel(channelName, {
+        config: {
+          broadcast: { self: true }
+        }
+      })
+
+      console.log('Channel created:', channel)
+
+      if (!channel) {
+        console.error('Failed to create channel - realtime may not be enabled')
+        this.logRealtimeEvent('error', { message: 'Failed to create broadcast channel' })
+        return
+      }
+
+      this.broadcastChannel = channel
+        .on('broadcast', { event: GAME_EVENTS.STATE_UPDATED }, async (payload) => {
+          try {
+            this.logRealtimeEvent('broadcast', { event: GAME_EVENTS.STATE_UPDATED, ...payload })
+            const gamePayload = await this.fetchGameState(gameId, playerId)
+            this.applyPayload(gamePayload, playerId)
+          } catch (err) {
+            console.error(err)
+            this.error = err
+          }
+        })
+        .on('broadcast', { event: GAME_EVENTS.TILE_PLAYED }, (payload) => {
+          this.logRealtimeEvent('broadcast', { event: GAME_EVENTS.TILE_PLAYED, ...payload })
+        })
+        .on('broadcast', { event: GAME_EVENTS.HOTEL_SELECTED }, (payload) => {
+          this.logRealtimeEvent('broadcast', { event: GAME_EVENTS.HOTEL_SELECTED, ...payload })
+        })
+        .on('broadcast', { event: GAME_EVENTS.TURN_ENDED }, (payload) => {
+          this.logRealtimeEvent('broadcast', { event: GAME_EVENTS.TURN_ENDED, ...payload })
+        })
+        .subscribe((status) => {
+          console.log('Broadcast channel subscription status:', status)
+          if (status === 'SUBSCRIBED') {
+            this.logRealtimeEvent('broadcast', { message: 'Subscribed to channel', channelName })
+          }
+        })
+    },
+    logRealtimeEvent(source, data) {
+      const event = {
+        timestamp: new Date().toISOString(),
+        source,
+        data
+      }
+      this.realtimeLogs = [event, ...this.realtimeLogs].slice(0, 20) // Keep last 20
     },
     setPlayerContext(playerId) {
       this.playerId = playerId
@@ -137,10 +213,41 @@ export const useGameStore = defineStore({
       })
       await this.refreshGameState()
     },
+    async resolveMerger(chainId) {
+      if (!this.gameId || !chainId) return
+      await supabase.functions.invoke('process-turn', {
+        body: JSON.stringify({
+          game_id: this.gameId,
+          move: { type: 'resolve-merger', chain_id: chainId }
+        }),
+        headers: { 'Content-Type': 'application/json' }
+      })
+      await this.refreshGameState()
+    },
+    async completeStockPurchase() {
+      if (!this.gameId) return
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      await supabase.functions.invoke('process-turn', {
+        body: JSON.stringify({
+          game_id: this.gameId,
+          move: { type: 'complete-buy' }
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      })
+      await this.refreshGameState()
+    },
     teardown() {
       if (this.subscription) {
-        supabase.removeSubscription(this.subscription)
+        supabase.removeChannel(this.subscription)
         this.subscription = null
+      }
+      if (this.broadcastChannel) {
+        supabase.removeChannel(this.broadcastChannel)
+        this.broadcastChannel = null
       }
       this.$reset()
     }

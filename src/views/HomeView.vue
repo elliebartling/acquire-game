@@ -1,10 +1,10 @@
 <script setup>
-// import TheWelcome from '@/components/TheWelcome.vue'
+import { computed } from 'vue'
 import { useGamesStore } from '../stores/games'
 import Game from '../components/Feed/Game.vue'
 import NewGameForm from '../components/NewGameForm.vue';
 const games = useGamesStore()
-console.log(games.allGames)
+const lobbyGames = computed(() => games.lobbyGames)
 </script>
 
 <template>
@@ -19,16 +19,17 @@ console.log(games.allGames)
         <div class="bg-white rounded-md px-6 pb-6 flex-grow">
             <h2 class="mt-4 mb-8">What's new</h2>
             <div class="flow-root mb-8">
-                <ul class="-mb-8">
-                    <Game v-for="game in games.allGames" :game="game"/>
-                    <!-- {#each $allGames as game}
-                        <NewGame game={game} />
-                    {/each}
-                    <NewMessage />
-                    <NewMessage />
-                    <NewMessage />
-                    <NewGame /> -->
+                <div class="flex flex-col gap-1 mb-4">
+                    <h2 class="text-2xl font-semibold text-gray-900">Live public games</h2>
+                    <p class="text-sm text-gray-500">Watch updated seats and phases appear in real time.</p>
+                </div>
+                <ul v-if="lobbyGames.length" class="-mb-8">
+                    <Game v-for="game in lobbyGames" :key="game.id" :game="game"/>
                 </ul>
+                <div v-else class="rounded-md border border-dashed border-violet-200 bg-violet-50 p-6 text-gray-700">
+                    <p class="font-medium">No public games yet</p>
+                    <p class="text-sm text-gray-500">Create a match or wait for someone else to start one. The lobby refreshes automatically.</p>
+                </div>
             </div>
         </div>
         <div class="bg-white rounded-md px-6 pb-6 hidden md:block max-w-xs	lg:max-w-md">

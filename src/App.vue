@@ -9,14 +9,16 @@ import Auth from "./components/Auth.vue"
 import Nav from "./components/Nav.vue"
 
 const authStore = useAuthStore()
-authStore.loadUser()
 
-const sessionUser = supabase.auth.user()
-if (sessionUser) {
-  authStore.user = sessionUser
-  authStore.loadUserProfile()
-}
+// Initialize auth state
+supabase.auth.getSession().then(({ data: { session } }) => {
+  if (session?.user) {
+    authStore.user = session.user
+    authStore.loadUserProfile()
+  }
+})
 
+// Listen for auth changes
 supabase.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_IN' && session?.user) {
     authStore.user = session.user

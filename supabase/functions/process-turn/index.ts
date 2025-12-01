@@ -6,6 +6,12 @@ import {
   ensureHandsAndBag,
   playerHasTile,
 } from "../_shared/gameState.ts";
+import {
+  advanceTurn,
+  ensureTurnStructure,
+  getCurrentPlayerId,
+} from "../_shared/turns.ts";
+import { GAME_EVENTS, sendGameBroadcast } from "../_shared/broadcast.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -18,12 +24,36 @@ type ChainRecord = {
   tiles?: string[];
   founderId?: string | null;
   safeThreshold?: number;
+  stockRemaining?: number;
+};
+type PlayerStateRecord = {
+  id: string;
+  hand?: string[];
+  cash?: number;
+  netWorth?: number;
+  stocks?: Record<string, number>;
+};
+type PlayerStateRecord = {
+  id: string;
+  hand?: string[];
 };
 type PendingAction =
   | {
     type: "start-chain";
     playerId: string;
     tiles: string[];
+    options: { id: string; name: string }[];
+  }
+  | {
+    type: "resolve-merger";
+    playerId: string;
+    tile: string;
+    options: { id: string; name: string }[];
+  }
+  | {
+    type: "buy-stock";
+    playerId: string;
+    remaining: number;
     options: { id: string; name: string }[];
   }
   | null;
@@ -153,6 +183,34 @@ function assignTilesToChain(
   chain.tiles = Array.from(existingTiles);
 }
 
+function assignConnectedClusterToChain(
+  chainId: string,
+  startKey: string,
+  board: { width: number; height: number; tiles: Record<string, TileRecord> },
+  chains: ChainRecord[],
+) {
+  const cluster = collectUnassignedCluster(startKey, board, chains);
+  if (!cluster.length) return;
+  assignTilesToChain(chainId, cluster, board.tiles, chains);
+}
+
+const PRICE_TABLE = [
+  { maxSize: 2, price: 200 },
+  { maxSize: 3, price: 300 },
+  { maxSize: 4, price: 400 },
+  { maxSize: 5, price: 500 },
+  { maxSize: 6, price: 600 },
+  { maxSize: 10, price: 700 },
+  { maxSize: 20, price: 800 },
+  { maxSize: Infinity, price: 900 },
+];
+
+function calculateStockPrice(chainSize: number) {
+  const tier = PRICE_TABLE.find((entry) => chainSize <= entry.maxSize) ||
+    PRICE_TABLE[PRICE_TABLE.length - 1];
+  return tier.price;
+}
+
 function updatePublicChains(
   publicChains: { id: string; name: string; size?: number; isSafe?: boolean }[] | undefined,
   internalChains: ChainRecord[],
@@ -174,6 +232,83 @@ function updatePublicChains(
       size,
     };
   });
+}
+
+function collectNeighborChains(
+  tileKey: string,
+  board: { width: number; height: number; tiles: Record<string, TileRecord> },
+  chains: ChainRecord[],
+) {
+  const neighbors = getAdjacentKeys(tileKey, board.width, board.height);
+  const matches = new Set<string>();
+  neighbors.forEach((neighbor) => {
+    const chainId = getTileChainId(neighbor, board.tiles, chains);
+    if (chainId) {
+      matches.add(chainId);
+    }
+  });
+  const result: ChainRecord[] = [];
+  matches.forEach((id) => {
+    const chain = chains.find((chainRecord) => chainRecord.id === id);
+    if (chain) result.push(chain);
+  });
+  return result;
+}
+
+function tileWouldMergeSafe(
+  tileKey: string,
+  board: { width: number; height: number; tiles: Record<string, TileRecord> },
+  chains: ChainRecord[],
+) {
+  const neighborChains = collectNeighborChains(tileKey, board, chains);
+  if (neighborChains.length <= 1) return false;
+  return neighborChains.every(
+    (chain) => (chain.tiles ?? []).length >= (chain.safeThreshold ?? 11),
+  );
+}
+
+function discardBlockedTiles(
+  gameState: { players?: PlayerStateRecord[]; config?: { handSize?: number } } | null,
+  board: { width: number; height: number; tiles: Record<string, TileRecord> },
+  chains: ChainRecord[],
+) {
+  if (!gameState || !Array.isArray(gameState.players)) return;
+  const handSize = gameState.config?.handSize ?? 6;
+  gameState.players.forEach((player) => {
+    if (!player || !Array.isArray(player.hand)) return;
+    player.hand = player.hand.filter(
+      (tile) => !tileWouldMergeSafe(tile, board, chains),
+    );
+  });
+  gameState.players.forEach((player) => {
+    if (!player || !player.id || !Array.isArray(player.hand)) return;
+    const missing = handSize - player.hand.length;
+    if (missing > 0) {
+      dealTilesToPlayer(gameState, player.id, missing);
+    }
+  });
+}
+
+function buildBuyPendingAction(
+  playerId: string,
+  playerCash: number,
+  chains: ChainRecord[],
+  maxShares = 3,
+) {
+  const purchasable = chains.filter((chain) => {
+    const size = (chain.tiles ?? []).length;
+    return size > 0 && playerCash >= calculateStockPrice(size);
+  });
+  if (!purchasable.length) return null;
+  return {
+    type: "buy-stock" as const,
+    playerId,
+    remaining: maxShares,
+    options: purchasable.map((chain) => ({
+      id: chain.id,
+      name: chain.name,
+    })),
+  };
 }
 
 serve(async (req: Request) => {
@@ -243,7 +378,15 @@ serve(async (req: Request) => {
     const playerIds = Array.isArray(data.players)
       ? (data.players as string[])
       : [];
+    const playerRecords = playerIds.map((id) => ({ id }));
     ensureHandsAndBag(existingGameState, boardConfig, playerIds);
+    
+    // Ensure turn structure
+    const turnResult = ensureTurnStructure(existingGameState, playerRecords);
+    if (turnResult.updated) {
+      Object.assign(existingGameState, turnResult.state);
+    }
+    const currentPlayerId = getCurrentPlayerId(existingGameState);
 
     const moveRecord = buildMoveRecord(move, userData.user.id);
     const nextMoves = [moveRecord, ...(data.moves ?? [])];
@@ -253,9 +396,17 @@ serve(async (req: Request) => {
       existingGameState.chains,
       existingGameState.config?.chainNames ?? [],
     );
+    const playerState = (existingGameState.players ?? []).find(
+      (player) => player?.id === userData.user.id,
+    ) as PlayerStateRecord | undefined;
     const pendingAction: PendingAction = existingGameState.pendingAction ?? null;
 
-    if (pendingAction && moveRecord.move_type !== "start-chain") {
+    if (
+      pendingAction &&
+      !["start-chain", "resolve-merger", "purchase", "complete-buy"].includes(
+        moveRecord.move_type,
+      )
+    ) {
       return new Response(
         JSON.stringify({ error: "Pending action must be resolved first." }),
         { status: 400, headers: { "Content-Type": "application/json" } },
@@ -303,7 +454,22 @@ serve(async (req: Request) => {
         chains,
       );
       updatedPendingAction = null;
+      
+      // Broadcast hotel selection
+      await sendGameBroadcast(game_id, GAME_EVENTS.HOTEL_SELECTED, {
+        playerId: userData.user.id,
+        chainId: choice.id,
+        chainName: choice.name,
+      });
     } else if (moveRecord.move_type === "tile") {
+      // Enforce turn order for tile placement
+      if (currentPlayerId && currentPlayerId !== userData.user.id) {
+        return new Response(
+          JSON.stringify({ error: "Not your turn" }),
+          { status: 403, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      
       if (!moveRecord.move_value) {
         return new Response(
           JSON.stringify({ error: "Missing tile value." }),
@@ -340,15 +506,51 @@ serve(async (req: Request) => {
         if (chainId) neighborChains.add(chainId);
       });
 
+      let shouldDraw = true;
       if (neighborChains.size > 1) {
-        return new Response(
-          JSON.stringify({ error: "Mergers are not implemented yet." }),
-          { status: 400, headers: { "Content-Type": "application/json" } },
-        );
-      }
-      if (neighborChains.size === 1) {
+        const mergingChains = Array.from(neighborChains)
+          .map((chainId) => chains.find((chain) => chain.id === chainId))
+          .filter(Boolean);
+        const allSafe = mergingChains.every((chain) => {
+          const threshold = chain?.safeThreshold ??
+            existingGameState.config?.safeChainSize ??
+            11;
+          return (chain?.tiles?.length ?? 0) >= threshold;
+        });
+        if (allSafe) {
+          delete board.tiles[moveRecord.move_value];
+          return new Response(
+            JSON.stringify({ error: "Tile discarded because all adjacent hotels are safe." }),
+            { status: 400, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        const maxSize = Math.max(...mergingChains.map((chain) => chain?.tiles?.length ?? 0));
+        const topChains = mergingChains.filter((chain) => (chain?.tiles?.length ?? 0) === maxSize);
+        if (topChains.length === 1) {
+          const survivor = topChains[0];
+          const mergingOthers = mergingChains.filter((chain) => chain?.id !== survivor?.id);
+          assignConnectedClusterToChain(survivor?.id ?? "", moveRecord.move_value, board, chains);
+          mergingOthers.forEach((chain) => {
+            if (!chain) return;
+            assignTilesToChain(survivor?.id ?? "", chain.tiles, board.tiles, chains);
+            chain.tiles = [];
+            chain.founderId = null;
+          });
+        } else {
+          updatedPendingAction = {
+            type: "resolve-merger",
+            playerId: userData.user.id,
+            tile: moveRecord.move_value,
+            options: topChains.map((chain) => ({
+              id: chain?.id ?? "",
+              name: chain?.name ?? 'Unknown',
+            })),
+          };
+          shouldDraw = false;
+        }
+      } else if (neighborChains.size === 1) {
         const [chainId] = Array.from(neighborChains);
-        assignTilesToChain(chainId, [moveRecord.move_value], board.tiles, chains);
+        assignConnectedClusterToChain(chainId, moveRecord.move_value, board, chains);
       } else {
         const cluster = collectUnassignedCluster(
           moveRecord.move_value,
@@ -374,16 +576,180 @@ serve(async (req: Request) => {
           }
         }
       }
+      if (shouldDraw) {
+        dealTilesToPlayer(existingGameState, userData.user.id, 1);
+      }
+      
+      // Broadcast tile played
+      await sendGameBroadcast(game_id, GAME_EVENTS.TILE_PLAYED, {
+        playerId: userData.user.id,
+        tile: moveRecord.move_value,
+      });
+    } else if (moveRecord.move_type === "resolve-merger") {
+      if (!pendingAction || pendingAction.type !== "resolve-merger") {
+        return new Response(
+          JSON.stringify({ error: "No merger to resolve." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (pendingAction.playerId !== userData.user.id) {
+        return new Response(
+          JSON.stringify({ error: "Only the active player may resolve this." }),
+          { status: 403, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (!move.chain_id && !move.chainId) {
+        return new Response(
+          JSON.stringify({ error: "Missing surviving chain." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      const survivorId = move.chain_id ?? move.chainId;
+      const survivor = chains.find((chain) => chain.id === survivorId);
+      if (!survivor) {
+        return new Response(
+          JSON.stringify({ error: "Unknown surviving chain." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      const mergeChainIds = (pendingAction.options ?? []).map((option) => option.id);
+      const mergingChains = chains.filter(
+        (chain) => mergeChainIds.includes(chain.id) && chain.id !== survivorId,
+      );
+      assignConnectedClusterToChain(survivorId, pendingAction.tile, board, chains);
+      mergingChains.forEach((chain) => {
+        assignTilesToChain(survivorId, chain.tiles, board.tiles, chains);
+        chain.tiles = [];
+        chain.founderId = null;
+      });
       dealTilesToPlayer(existingGameState, userData.user.id, 1);
+      updatedPendingAction = null;
+      
+      // Broadcast merger resolution
+      await sendGameBroadcast(game_id, GAME_EVENTS.HOTEL_SELECTED, {
+        playerId: userData.user.id,
+        survivorId,
+        mergedChains: mergingChains.map((c) => c.id),
+      });
+    } else if (moveRecord.move_type === "purchase") {
+      if (!pendingAction || pendingAction.type !== "buy-stock") {
+        return new Response(
+          JSON.stringify({ error: "No stock purchase pending." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (pendingAction.playerId !== userData.user.id) {
+        return new Response(
+          JSON.stringify({ error: "Only the owner may buy stock." }),
+          { status: 403, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      const shares = Number(move.shares ?? move.share ?? 1);
+      if (!Number.isFinite(shares) || shares < 1) {
+        return new Response(
+          JSON.stringify({ error: "Invalid share count" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (shares > pendingAction.remaining) {
+        return new Response(
+          JSON.stringify({ error: "Cannot buy more than the remaining allowance." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      const chainIdentifier = move.chain_id ?? move.chainId ?? move.chain ?? move.name;
+      const targetChain = chains.find(
+        (chain) =>
+          chain.id === chainIdentifier ||
+          chain.name === chainIdentifier,
+      );
+      if (!targetChain || (targetChain.tiles ?? []).length === 0) {
+        return new Response(
+          JSON.stringify({ error: "Chain must exist on the board." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if ((targetChain.stockRemaining ?? 0) < shares) {
+        return new Response(
+          JSON.stringify({ error: "Not enough stock remaining." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (!playerState) {
+        return new Response(
+          JSON.stringify({ error: "Player not found" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      const chainSize = (targetChain.tiles ?? []).length;
+      const price = calculateStockPrice(chainSize);
+      const totalCost = price * shares;
+      const availableCash = playerState.cash ?? 0;
+      if (availableCash < totalCost) {
+        return new Response(
+          JSON.stringify({ error: "Insufficient funds" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      playerState.cash = availableCash - totalCost;
+      playerState.netWorth = (playerState.netWorth ?? 0) - totalCost;
+      playerState.stocks = playerState.stocks ?? {};
+      playerState.stocks[targetChain.name] = (playerState.stocks[targetChain.name] ?? 0) + shares;
+      targetChain.stockRemaining = (targetChain.stockRemaining ?? 0) - shares;
+      const remaining = pendingAction.remaining - shares;
+      updatedPendingAction = remaining > 0
+        ? { ...pendingAction, remaining }
+        : null;
+    } else if (moveRecord.move_type === "complete-buy") {
+      if (!pendingAction || pendingAction.type !== "buy-stock") {
+        return new Response(
+          JSON.stringify({ error: "No stock purchase pending." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (pendingAction.playerId !== userData.user.id) {
+        return new Response(
+          JSON.stringify({ error: "Only the owner may end the purchase step." }),
+          { status: 403, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      updatedPendingAction = null;
     }
 
-    const nextGameState = {
+    if (
+      (moveRecord.move_type === "tile" ||
+        moveRecord.move_type === "resolve-merger") &&
+      !updatedPendingAction
+    ) {
+      const action = buildBuyPendingAction(
+        userData.user.id,
+        playerState?.cash ?? 0,
+        chains,
+      );
+      if (action) {
+        updatedPendingAction = action;
+      }
+    }
+
+    discardBlockedTiles(existingGameState, board, chains);
+    
+    // Advance turn if no pending action
+    let finalGameState = {
       ...existingGameState,
       board,
       chains,
       moves: nextMoves,
       pendingAction: updatedPendingAction,
     };
+    
+    let turnEnded = false;
+    if (!updatedPendingAction && currentPlayerId === userData.user.id) {
+      finalGameState = advanceTurn(finalGameState);
+      turnEnded = true;
+      console.log("Turn advanced from", currentPlayerId, "to", getCurrentPlayerId(finalGameState));
+    }
+    
+    const nextGameState = finalGameState;
 
     const nextPublicState = {
       ...existingPublicState,
@@ -393,6 +759,7 @@ serve(async (req: Request) => {
       },
       chains: updatePublicChains(existingPublicState.chains, chains),
       moves: nextMoves,
+      currentPlayerId: getCurrentPlayerId(nextGameState),
       pending_action: updatedPendingAction
         ? { type: updatedPendingAction.type, playerId: updatedPendingAction.playerId }
         : null,
@@ -414,6 +781,20 @@ serve(async (req: Request) => {
         { status: 500, headers: { "Content-Type": "application/json" } },
       );
     }
+    
+    // Broadcast turn ended if applicable
+    if (turnEnded) {
+      await sendGameBroadcast(game_id, GAME_EVENTS.TURN_ENDED, {
+        previousPlayerId: userData.user.id,
+        currentPlayerId: getCurrentPlayerId(nextGameState),
+      });
+    }
+    
+    // Always broadcast state updated
+    await sendGameBroadcast(game_id, GAME_EVENTS.STATE_UPDATED, {
+      moveType: moveRecord.move_type,
+      playerId: userData.user.id,
+    });
 
     return new Response(
       JSON.stringify({
