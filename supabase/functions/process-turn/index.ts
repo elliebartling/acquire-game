@@ -56,6 +56,20 @@ type PendingAction =
     remaining: number;
     options: { id: string; name: string }[];
   }
+  | {
+    type: "dispose-stock";
+    playerId: string;
+    defunctChainId: string;
+    defunctChainName: string;
+    defunctChainSize: number;
+    survivingChainId: string;
+    survivingChainName: string;
+    playerShares: number;
+    playerOrder: string[];
+    currentIndex: number;
+    remainingDefunctChains?: Array<{ id: string; name: string; size: number }>;
+    mergerMakerId: string;
+  }
   | null;
 
 function buildMoveRecord(move: Record<string, unknown> = {}, playerId: string) {
@@ -258,6 +272,26 @@ function calculateMergerBonuses(chainSize: number, chainName?: string | null): {
     majority: entry.majority,
     minority: entry.minority,
   };
+}
+
+function getPlayersInOrder(
+  startPlayerId: string,
+  allPlayers: PlayerStateRecord[],
+  turnOrder: string[]
+): string[] {
+  // Filter turnOrder to ensure all players exist in allPlayers
+  const validPlayerIds = new Set(allPlayers.map(p => p.id));
+  const filteredOrder = turnOrder.filter(id => validPlayerIds.has(id));
+  
+  if (filteredOrder.length === 0) {
+    return allPlayers.map(p => p.id);
+  }
+  
+  const startIndex = filteredOrder.indexOf(startPlayerId);
+  if (startIndex === -1) {
+    return filteredOrder.length > 0 ? filteredOrder : allPlayers.map(p => p.id);
+  }
+  return [...filteredOrder.slice(startIndex), ...filteredOrder.slice(0, startIndex)];
 }
 
 function payMergerBonuses(
@@ -791,12 +825,16 @@ serve(async (req: Request) => {
         (chain) => mergeChainIds.includes(chain.id) && chain.id !== survivorId,
       );
       
-      // Pay bonuses for defunct chains before merging
-      mergingChains.forEach((defunctChain) => {
-        const defunctChainSize = defunctChain.tiles?.length ?? 0;
-        const bonuses = calculateMergerBonuses(defunctChainSize, defunctChain.name);
-        payMergerBonuses(defunctChain, existingGameState.players ?? [], bonuses);
-      });
+      // Pay bonuses and setup disposal for largest defunct chain
+      const largestDefunct = mergingChains.reduce((largest, chain) => {
+        const size = chain.tiles?.length ?? 0;
+        const largestSize = largest ? (largest.tiles?.length ?? 0) : 0;
+        return size > largestSize ? chain : largest;
+      }, mergingChains[0]);
+      
+      const defunctChainSize = largestDefunct.tiles?.length ?? 0;
+      const bonuses = calculateMergerBonuses(defunctChainSize, largestDefunct.name);
+      payMergerBonuses(largestDefunct, existingGameState.players ?? [], bonuses);
       
       assignConnectedClusterToChain(survivorId, pendingAction.tile, board, chains);
       mergingChains.forEach((chain) => {
@@ -804,8 +842,37 @@ serve(async (req: Request) => {
         chain.tiles = [];
         chain.founderId = null;
       });
-      dealTilesToPlayer(existingGameState, userData.user.id, 1);
-      updatedPendingAction = null;
+      
+      // Setup stock disposal for players who have shares in the defunct chain
+      const playersWithStock = (existingGameState.players ?? []).filter((p) => {
+        const shares = p.stocks?.[largestDefunct.name] ?? 0;
+        return shares > 0;
+      });
+      
+      if (playersWithStock.length > 0) {
+        const turnOrder = existingGameState.turnOrder ?? [];
+        const disposalOrder = getPlayersInOrder(userData.user.id, playersWithStock, turnOrder);
+        const firstPlayerId = disposalOrder[0];
+        const firstPlayerShares = playersWithStock.find(p => p.id === firstPlayerId)?.stocks?.[largestDefunct.name] ?? 0;
+        
+        updatedPendingAction = {
+          type: "dispose-stock",
+          playerId: firstPlayerId,
+          defunctChainId: largestDefunct.id,
+          defunctChainName: largestDefunct.name,
+          defunctChainSize,
+          survivingChainId: survivorId,
+          survivingChainName: survivor.name,
+          playerShares: firstPlayerShares,
+          playerOrder: disposalOrder,
+          currentIndex: 0,
+          mergerMakerId: userData.user.id,
+        };
+      } else {
+        // No disposal needed, deal tile and clear pending action
+        dealTilesToPlayer(existingGameState, userData.user.id, 1);
+        updatedPendingAction = null;
+      }
       
       // Broadcast merger resolution
       await sendGameBroadcast(game_id, GAME_EVENTS.HOTEL_SELECTED, {
@@ -895,6 +962,182 @@ serve(async (req: Request) => {
         );
       }
       updatedPendingAction = null;
+    } else if (moveRecord.move_type === "dispose-stock") {
+      if (!pendingAction || pendingAction.type !== "dispose-stock") {
+        return new Response(
+          JSON.stringify({ error: "No stock disposal pending." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (pendingAction.playerId !== userData.user.id) {
+        return new Response(
+          JSON.stringify({ error: "Not your turn to dispose stock." }),
+          { status: 403, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      
+      const actions = Array.isArray(move.actions) ? move.actions : [];
+      
+      if (actions.length === 0) {
+        return new Response(
+          JSON.stringify({ error: "No disposal actions provided." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      
+      const currentPlayer = (existingGameState.players ?? []).find(p => p.id === userData.user.id);
+      if (!currentPlayer) {
+        return new Response(
+          JSON.stringify({ error: "Player not found." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      
+      const survivingChain = chains.find(c => c.id === pendingAction.survivingChainId);
+      if (!survivingChain) {
+        return new Response(
+          JSON.stringify({ error: "Surviving chain not found." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      
+      const playerShares = pendingAction.playerShares;
+      
+      // Validate disposal actions
+      let totalDisposed = 0;
+      let totalTradeShares = 0;
+      for (const actionItem of actions) {
+        const action = actionItem.action as string;
+        const shares = Number(actionItem.shares ?? 0);
+        
+        if (shares < 0) {
+          return new Response(
+            JSON.stringify({ error: "Shares must be non-negative." }),
+            { status: 400, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        
+        if (action === "trade") {
+          if (shares % 2 !== 0) {
+            return new Response(
+              JSON.stringify({ error: "Trade shares must be a multiple of 2." }),
+              { status: 400, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          totalTradeShares += shares;
+        }
+        
+        totalDisposed += shares;
+      }
+      
+      if (totalDisposed !== playerShares) {
+        return new Response(
+          JSON.stringify({ error: `Total disposed shares (${totalDisposed}) must equal player shares (${playerShares}).` }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      
+      const totalTradeReceiving = totalTradeShares / 2;
+      if (totalTradeReceiving > 0 && (survivingChain.stockRemaining ?? 0) < totalTradeReceiving) {
+        return new Response(
+          JSON.stringify({ error: "Not enough stock available in surviving chain for trade." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      
+      // Process all actions
+      currentPlayer.stocks = currentPlayer.stocks ?? {};
+      let remainingShares = playerShares;
+      
+      for (const actionItem of actions) {
+        const action = actionItem.action as string;
+        const shares = Number(actionItem.shares ?? 0);
+        
+        if (action === "sell") {
+          const price = calculateStockPrice(pendingAction.defunctChainSize, pendingAction.defunctChainName);
+          const total = price * shares;
+          currentPlayer.cash = (currentPlayer.cash ?? 0) + total;
+          remainingShares -= shares;
+        } else if (action === "trade") {
+          const receiving = shares / 2;
+          currentPlayer.stocks[pendingAction.survivingChainName] = (currentPlayer.stocks[pendingAction.survivingChainName] ?? 0) + receiving;
+          survivingChain.stockRemaining = (survivingChain.stockRemaining ?? 0) - receiving;
+          remainingShares -= shares;
+        }
+        // hold: no action needed, shares are just kept
+      }
+      
+      currentPlayer.stocks[pendingAction.defunctChainName] = remainingShares;
+      
+      // Advance to next player in disposal order
+      const nextIndex = pendingAction.currentIndex + 1;
+      if (nextIndex < pendingAction.playerOrder.length) {
+        const nextPlayerId = pendingAction.playerOrder[nextIndex];
+        const nextPlayer = (existingGameState.players ?? []).find(p => p.id === nextPlayerId);
+        const nextPlayerShares = nextPlayer?.stocks?.[pendingAction.defunctChainName] ?? 0;
+        
+        if (nextPlayerShares > 0) {
+          updatedPendingAction = {
+            ...pendingAction,
+            playerId: nextPlayerId,
+            playerShares: nextPlayerShares,
+            currentIndex: nextIndex,
+          };
+        } else {
+          // Skip players with no shares
+          let foundNext = false;
+          for (let i = nextIndex; i < pendingAction.playerOrder.length; i++) {
+            const checkPlayerId = pendingAction.playerOrder[i];
+            const checkPlayer = (existingGameState.players ?? []).find(p => p.id === checkPlayerId);
+            const checkShares = checkPlayer?.stocks?.[pendingAction.defunctChainName] ?? 0;
+            if (checkShares > 0) {
+              updatedPendingAction = {
+                ...pendingAction,
+                playerId: checkPlayerId,
+                playerShares: checkShares,
+                currentIndex: i,
+              };
+              foundNext = true;
+              break;
+            }
+          }
+          if (!foundNext) {
+            // All players have disposed, offer buy-stock to merger maker
+            const mergerMaker = (existingGameState.players ?? []).find(p => p.id === pendingAction.mergerMakerId);
+            if (mergerMaker) {
+              const buyAction = buildBuyPendingAction(
+                pendingAction.mergerMakerId,
+                mergerMaker.cash ?? 0,
+                chains,
+              );
+              if (buyAction) {
+                updatedPendingAction = buyAction;
+              } else {
+                updatedPendingAction = null;
+              }
+            } else {
+              updatedPendingAction = null;
+            }
+          }
+        }
+      } else {
+        // All players have disposed, offer buy-stock to merger maker
+        const mergerMaker = (existingGameState.players ?? []).find(p => p.id === pendingAction.mergerMakerId);
+        if (mergerMaker) {
+          const buyAction = buildBuyPendingAction(
+            pendingAction.mergerMakerId,
+            mergerMaker.cash ?? 0,
+            chains,
+          );
+          if (buyAction) {
+            updatedPendingAction = buyAction;
+          } else {
+            updatedPendingAction = null;
+          }
+        } else {
+          updatedPendingAction = null;
+        }
+      }
     }
 
     if (
