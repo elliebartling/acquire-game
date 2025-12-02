@@ -6,12 +6,13 @@ import PlayerHand from '@/components/Game/PlayerHand.vue'
 import StockPanel from '@/components/Game/StockPanel.vue'
 import ChainDisplay from '@/components/Game/ChainDisplay.vue'
 import StockBuyingWidget from '@/components/Game/StockBuyingWidget.vue'
+import StockDisposalWidget from '@/components/Game/StockDisposalWidget.vue'
 import Scoreboard from '@/components/Game/Scoreboard.vue'
 import { usePlayersStore } from '@/stores/players'
 import { useGamesStore } from '@/stores/games'
 import { useGameStore } from '@/stores/game'
 import { useAuthStore } from '@/stores/auth'
-import { getChainButtonClass } from '@/constants/chainColors'
+import { getChainButtonClass, getChainBoardClass } from '@/constants/chainColors'
 import { buildTileHints } from '@/game/utils/tileHints'
 
 const route = useRoute()
@@ -33,6 +34,8 @@ const realtimeLogs = computed(() => gameStore.realtimeLogs)
 const currentPlayerId = computed(() => publicState.value?.currentPlayerId)
 
 const currentGame = computed(() => gamesStore.gameById(gameId.value))
+const currentUsername = computed(() => authStore.user?.profile?.username || '')
+const currentUserId = computed(() => authStore.user?.id)
 
 const usernameMap = computed(() => {
   const map = {}
@@ -46,19 +49,191 @@ const usernameMap = computed(() => {
   return map
 })
 
+const playerAvatarMap = computed(() => {
+  const map = {}
+  if (publicState.value?.players) {
+    publicState.value.players.forEach(player => {
+      const storePlayer = playersStore.playerById(player.id)
+      map[player.id] = storePlayer?.avatar_url || null
+    })
+  }
+  return map
+})
+
+function getPlayerColor(playerId) {
+  const colors = [
+    '#8b5cf6', // violet
+    '#ec4899', // pink
+    '#3b82f6', // blue
+    '#10b981', // green
+    '#f59e0b', // amber
+    '#ef4444', // red
+  ]
+  let hash = 0
+  for (let i = 0; i < playerId.length; i++) {
+    hash = playerId.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return colors[Math.abs(hash) % colors.length]
+}
+
 function slugToTitle(slug) {
   return slug.replace('-', ' ')
 }
 
-function formatMoveAction(moveType) {
-  switch (moveType) {
-    case 'tile':
-      return 'played'
-    case 'purchase':
-      return 'bought stock in'
-    default:
-      return moveType
+// Enhanced move formatting with human-readable actions and extracted values
+function formatMove(move) {
+  // Use disposal_actions array if available, otherwise fall back to disposal_action
+  const disposalActions = move.disposal_actions || (move.disposal_action ? [move.disposal_action] : null)
+  const action = formatMoveAction(move.move_type, disposalActions)
+  const details = extractMoveDetails(move)
+  
+  // Debug: log move structure for first few moves
+  if (process.env.NODE_ENV === 'development') {
+    const moveIndex = moves.value.findIndex(m => m === move || (m.created_at === move.created_at && m.player === move.player))
+    if (moveIndex >= 0 && moveIndex < 3) {
+      console.log(`Move ${moveIndex}:`, {
+        move_type: move.move_type,
+        move_value: move.move_value,
+        chain_name: move.chain_name,
+        shares: move.shares,
+        disposal_action: move.disposal_action,
+        disposal_actions: move.disposal_actions,
+        surviving_chain_name: move.surviving_chain_name,
+        extracted_details: details
+      })
+    }
   }
+  
+  return { action, details, move }
+}
+
+function formatMoveAction(moveType, disposalActions = null) {
+  if (moveType === 'dispose-stock' && disposalActions) {
+    // Handle array of disposal actions
+    if (Array.isArray(disposalActions) && disposalActions.length > 0) {
+      const actionMap = {
+        'hold': 'held',
+        'sell': 'sold',
+        'trade': 'traded'
+      }
+      // If multiple actions, show the primary one or combine them
+      if (disposalActions.length === 1) {
+        return actionMap[disposalActions[0].action] || 'disposed'
+      } else {
+        // Multiple actions - we'll show details in the details array
+        return 'disposed'
+      }
+    }
+    // Fallback for single disposal_action (backward compatibility)
+    if (typeof disposalActions === 'string') {
+      const actionMap = {
+        'hold': 'held',
+        'sell': 'sold',
+        'trade': 'traded'
+      }
+      return actionMap[disposalActions] || 'disposed'
+    }
+  }
+  
+  const actionMap = {
+    'tile': 'played',
+    'purchase': 'bought',
+    'start-chain': 'started',
+    'dispose-stock': 'disposed',
+    'complete-buy': 'completed purchase',
+    'resolve-merger': 'resolved merger'
+  }
+  return actionMap[moveType] || moveType.replace('-', ' ')
+}
+
+function extractMoveDetails(move) {
+  const details = []
+  
+  // Extract tile information
+  if (move.move_type === 'tile' && move.move_value) {
+    details.push({ type: 'tile', value: move.move_value, index: 0 })
+  }
+  
+  // Handle dispose-stock moves with multiple actions
+  if (move.move_type === 'dispose-stock' && move.disposal_actions && Array.isArray(move.disposal_actions)) {
+    // For disposal moves, show each action with its share count
+    move.disposal_actions.forEach((actionItem, idx) => {
+      const actionMap = {
+        'hold': 'held',
+        'sell': 'sold',
+        'trade': 'traded'
+      }
+      const actionText = actionMap[actionItem.action] || actionItem.action
+      details.push({ 
+        type: 'disposal-action', 
+        value: actionText, 
+        shares: actionItem.shares,
+        index: idx * 2
+      })
+    })
+    
+    // Add defunct chain name
+    if (move.chain_name) {
+      details.push({ type: 'chain', value: move.chain_name, index: move.disposal_actions.length * 2 })
+    }
+    
+    // Add surviving chain name if traded
+    if (move.surviving_chain_name && move.disposal_actions.some(a => a.action === 'trade')) {
+      details.push({ type: 'surviving-chain', value: move.surviving_chain_name, index: move.disposal_actions.length * 2 + 1 })
+    }
+    
+    return details
+  }
+  
+  // Extract share count (before chain for better text flow)
+  // Check both new field and fallback to parsing move_value if needed
+  let shares = move.shares
+  if (!shares && move.move_type === 'purchase') {
+    // Try to infer from move_value if it's a number
+    const parsed = parseInt(move.move_value)
+    if (!isNaN(parsed)) {
+      shares = parsed
+    }
+  }
+  
+  if (shares && shares > 0 && move.move_type === 'purchase') {
+    details.push({ type: 'shares', value: shares, index: 1 })
+  }
+  
+  // Extract chain information from enhanced move record
+  // Check both new field and fallback to parsing move_value if needed
+  let chainName = move.chain_name
+  if (!chainName && move.move_value) {
+    // Check if move_value is a chain name
+    const knownChains = ['Luxor', 'Tower', 'American', 'Festival', 'Worldwide', 'Continental', 'Imperial']
+    if (knownChains.includes(move.move_value)) {
+      chainName = move.move_value
+    }
+  }
+  
+  // For start-chain and resolve-merger, chain_name should be set
+  // For purchase, try to find chain from move_value or context
+  if (chainName) {
+    details.push({ type: 'chain', value: chainName, index: 2 })
+  } else if (move.move_type === 'purchase' && move.move_value) {
+    // Last resort: check if move_value looks like a chain name
+    const knownChains = ['Luxor', 'Tower', 'American', 'Festival', 'Worldwide', 'Continental', 'Imperial']
+    if (knownChains.includes(move.move_value)) {
+      details.push({ type: 'chain', value: move.move_value, index: 2 })
+    }
+  }
+  
+  return details
+}
+
+function isTurnStart(move, index, moves) {
+  // First move always starts a turn
+  if (index === 0) return true
+  // Tile plays always start a turn
+  if (move.move_type === 'tile') return true
+  // If previous move was by a different player, this starts a new turn
+  const previousMove = moves[index - 1]
+  return previousMove && previousMove.player !== move.player
 }
 
 function usernameFor(playerId) {
@@ -106,6 +281,16 @@ async function handleMergerSelection(option) {
   await gameStore.resolveMerger(option.id)
 }
 
+async function handleStockDisposal(disposal) {
+  await gameStore.disposeStock(disposal.actions)
+}
+
+function getSurvivingChainStockRemaining(chainId) {
+  if (!chainId || !publicState.value?.chains) return 0
+  const chain = publicState.value.chains.find(c => c.id === chainId)
+  return chain?.stockRemaining ?? 0
+}
+
 function chainClasses(name) {
   return getChainButtonClass(name)
 }
@@ -127,55 +312,113 @@ watch(
 )
 </script>
 <template>
-    <header class="bg-gray-900 text-white">
-        <div v-if="currentGame" class="container mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-4">
-            <div class="flex flex-wrap items-center gap-3">
-                <router-link to="/" class="flex items-center gap-2 text-sm text-gray-300 hover:text-white">
+    <header class="bg-gray-900 text-white border-b border-gray-800">
+        <div v-if="currentGame" class="px-4 py-6 flex flex-wrap items-center justify-between gap-3">
+            <!-- Left side: Back button & game meta -->
+            <div class="flex flex-wrap items-center gap-4">
+                <router-link to="/" class="flex items-center gap-2 text-sm text-gray-300 hover:text-white transition-colors">
                     <span aria-hidden="true">←</span>
-                    Lobby
+                    <span class="font-medium">Lobby</span>
                 </router-link>
-                <h1 class="text-2xl font-semibold">Game</h1>
-                <div class="flex items-center gap-2 text-xs text-gray-200">
-                    <span class="text-gray-400">Rules:</span>
-                    <template v-if="currentGame?.rules?.length">
+                <div class="flex items-center gap-2 text-xs">
+                    <span class="text-gray-500">|</span>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <template v-if="currentGame?.rules?.length">
+                            <span
+                              v-for="rule in currentGame.rules"
+                              :key="rule"
+                              class="rounded-full bg-gray-800 px-2.5 py-1 text-gray-300"
+                            >
+                              {{ slugToTitle(rule) }}
+                            </span>
+                        </template>
+                        <span v-else class="rounded-full bg-gray-800 px-2.5 py-1 text-gray-300">Standard</span>
+                    </div>
+                    <span class="text-gray-500">•</span>
+                    <div class="flex items-center gap-1.5">
                         <span
-                          v-for="rule in currentGame.rules"
-                          :key="rule"
-                          class="rounded-full bg-gray-800 px-3 py-1"
+                          v-for="player in currentGame.players"
+                          :key="player"
+                          class="text-gray-400"
+                          :title="usernameFor(player)"
                         >
-                          {{ slugToTitle(rule) }}
+                            <img
+                              v-if="playerAvatarMap[player]"
+                              :src="playerAvatarMap[player]"
+                              :alt="usernameFor(player)"
+                              class="h-6 w-6 rounded-full object-cover border border-gray-700 inline-block"
+                            />
+                            <span
+                              v-else
+                              class="h-6 w-6 rounded-full inline-flex items-center justify-center text-xs font-bold text-white border border-gray-700"
+                              :style="{ backgroundColor: getPlayerColor(player) }"
+                            >
+                              {{ usernameFor(player).charAt(0).toUpperCase() }}
+                            </span>
+                            <span class="text-white/50 ml-2 mr-3">{{ usernameFor(player) }}</span>
                         </span>
-                    </template>
-                    <span v-else class="rounded-full bg-gray-800 px-3 py-1">Standard</span>
+                    </div>
                 </div>
             </div>
-            <div class="flex flex-wrap items-center gap-4 text-sm text-gray-200">
-                <div class="flex items-center gap-2">
-                    <span class="text-gray-400">Players:</span>
-                    <span
-                      v-for="(player, index) in currentGame.players"
-                      :key="player"
-                      class="font-medium"
-                    >
-                        {{ usernameFor(player) }}<span v-if="index < currentGame.players.length - 1">,</span>
-                    </span>
-                </div>
-                <div v-if="currentPlayerId" class="flex items-center gap-2 border-l border-gray-700 pl-4">
-                    <span class="text-gray-400">Current turn:</span>
-                    <span class="font-semibold text-white">{{ usernameFor(currentPlayerId) }}</span>
-                </div>
+            <!-- Right side: Current user info -->
+            <div v-if="currentUserId && currentUsername" class="flex items-center gap-2">
+                <router-link 
+                    :to="`/player/${currentUserId}`" 
+                    class="flex items-center gap-2 text-sm text-gray-300 hover:text-white transition-colors"
+                >
+                    <span class="font-medium">{{ currentUsername }}</span>
+                    <span aria-hidden="true" class="text-gray-500">→</span>
+                </router-link>
             </div>
         </div>
     </header>
     <main v-if="publicState" class="container mx-auto relative -top-6 px-3 py-3 max-w-[1600px]">
         <div id="grid" class="grid gap-3 grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_1fr]">
-            <Scoreboard 
-              class="col-span-1 lg:col-span-4 w-full order-1 lg:order-1"
-              :players="publicState.players"
-              :chains="publicState.chains"
-              :current-player-id="currentPlayerId"
-              :username-map="usernameMap"
-            />
+            <div class="col-span-1 lg:col-span-6 w-full order-1 lg:order-1 flex flex-col gap-3">
+                <Scoreboard 
+                  :players="publicState.players"
+                  :chains="publicState.chains"
+                  :current-player-id="currentPlayerId"
+                  :username-map="usernameMap"
+                  :avatar-map="playerAvatarMap"
+                />
+                <div class="card pt-4">
+                  <PlayerHand
+                    :hand="playerView?.hand"
+                    :hand-hints="handTileHints"
+                    :disabled="!playerView?.canPlayTile"
+                    :embedded="true"
+                    @play-tile="playTile"
+                  />
+                  
+                  <div
+                    v-if="pendingAction?.type === 'buy-stock'"
+                    class="mt-3 pt-3 border-t border-gray-200"
+                  >
+                    <StockBuyingWidget
+                      :chains="publicState.chains"
+                      :max-shares="pendingAction.remaining || 3"
+                      :player-cash="playerView?.cash || 0"
+                      @purchase="handleBatchPurchase"
+                      @skip="handleSkipPurchase"
+                    />
+                  </div>
+                  
+                  <div
+                    v-if="pendingAction?.type === 'dispose-stock'"
+                    class="mt-3 pt-3 border-t border-gray-200"
+                  >
+                    <StockDisposalWidget
+                      :defunct-chain-name="pendingAction.defunctChainName"
+                      :defunct-chain-size="pendingAction.defunctChainSize"
+                      :surviving-chain-name="pendingAction.survivingChainName"
+                      :player-shares="pendingAction.playerShares"
+                      :surviving-chain-stock-remaining="getSurvivingChainStockRemaining(pendingAction.survivingChainId)"
+                      @dispose="handleStockDisposal"
+                    />
+                  </div>
+                </div>
+            </div>
             <div id="board" class="card col-span-1 lg:col-span-6 w-full pt-4 order-0 lg:order-0 lg:row-span-2">
                 <Board
                     :board="publicState.board"
@@ -229,66 +472,66 @@ watch(
                   </div>
                 </div>
                 <div class="mt-4 border-t border-gray-100 pt-3">
-                  <PlayerHand
-                    :hand="playerView?.hand"
-                    :hand-hints="handTileHints"
-                    :disabled="!playerView?.canPlayTile"
-                    :embedded="true"
-                    @play-tile="playTile"
-                  />
-                  
-                  <div
-                    v-if="pendingAction?.type === 'buy-stock'"
-                    class="mt-3 pt-3 border-t border-gray-200"
-                  >
-                    <StockBuyingWidget
-                      :chains="publicState.chains"
-                      :max-shares="pendingAction.remaining || 3"
-                      :player-cash="playerView?.cash || 0"
-                      @purchase="handleBatchPurchase"
-                      @skip="handleSkipPurchase"
-                    />
-                  </div>
-                </div>
-            </div>
-            <div id="moves" class="card flex flex-col col-span-1 lg:col-span-2 order-2 lg:order-2 max-h-[600px]">
-                <h2 class="mt-3 mb-3 text-base">Moves</h2>
-                <div class="flow-root overflow-y-auto flex-1">
-                    <ul class="-mb-4">
-                        <li v-for="move in moves" :key="move.created_at || move.move_value">
-                            <div class="relative pb-4">
-                                <span class="absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200" aria-hidden="true"></span>
-                                <div class="relative flex items-start space-x-3">
-                                    <div>
-                                        <div class="relative px-1">
-                                            <div class="h-6 w-6 bg-violet-200 text-violet-500 rounded-full ring-4 ring-white flex items-center justify-center">
-                                                <svg v-if="move.move_type === 'tile'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                    <path fill-rule="evenodd" d="M6.672 1.911a1 1 0 10-1.932.518l.259.966a1 1 0 001.932-.518l-.26-.966zM2.429 4.74a1 1 0 10-.517 1.932l.966.259a1 1 0 00.517-1.932l-.966-.26zm8.814-.569a1 1 0 00-1.415-1.414l-.707.707a1 1 0 101.415 1.415l.707-.708zm-7.071 7.072l.707-.707A1 1 0 003.465 9.12l-.708.707a1 1 0 001.415 1.415zm3.2-5.171a1 1 0 00-1.3 1.3l4 10a1 1 0 001.823.075l1.38-2.759 3.018 3.02a1 1 0 001.414-1.415l-3.019-3.02 2.76-1.379a1 1 0 00-.076-1.822l-10-4z" clip-rule="evenodd" />
-                                                </svg>
-                                                <svg v-else-if="move.move_type === 'purchase'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                    <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z" />
-                                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z" clip-rule="evenodd" />
-                                                </svg>
-                                                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
-                                                </svg>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="min-w-0 py-0">
-                                        <div class="text-sm leading-1 mt-0.5 text-gray-500">
-                                            <span class="mr-2.5 block">
-                                                <!-- aquiremonstress played A-2 -->
-                                                <span class="text-black">{{ usernameFor(move.player) }}</span> 
-                                                {{ formatMoveAction(move.move_type) }} 
-                                                <span class="text-black">{{ move.move_value }}</span>
-                                            </span>
-                                        </div>
-                                    </div>
+                  <div id="moves" class="flex flex-col max-h-[600px]">
+                    <h2 class="mt-3 mb-3 text-base font-semibold text-gray-900">Moves</h2>
+                    <div class="flow-root overflow-y-auto flex-1">
+                        <ul role="list" class="divide-y divide-gray-200">
+                            <li v-for="(move, index) in moves" :key="move.created_at || move.move_value || index" class="py-2.5">
+                                <div class="text-sm text-gray-700 flex items-center gap-1.5 flex-wrap">
+                                    <span class="font-semibold text-gray-900">{{ usernameFor(move.player) }}</span>
+                                    <span>{{ formatMove(move).action }}</span>
+                                    <template v-for="(detail, detailIndex) in formatMove(move).details" :key="detailIndex">
+                                      <!-- Tile badge -->
+                                      <span v-if="detail.type === 'tile'" 
+                                            class="inline-flex items-center justify-center min-w-[2rem] h-6 px-1.5 rounded text-[10px] font-medium bg-gray-900 text-white border border-gray-700">
+                                        {{ detail.value }}
+                                      </span>
+                                      
+                                      <!-- Disposal action (hold/sell/trade) with shares -->
+                                      <template v-else-if="detail.type === 'disposal-action'">
+                                        <span v-if="detailIndex > 0" class="text-gray-500">,</span>
+                                        <span class="text-gray-700">{{ detail.value }}</span>
+                                        <span v-if="detail.shares" class="text-gray-600 font-medium ml-0.5">{{ detail.shares }}</span>
+                                        <span v-if="detail.shares" class="text-gray-500 ml-0.5">{{ detail.shares === 1 ? 'share' : 'shares' }}</span>
+                                      </template>
+                                      
+                                      <!-- Shares for purchases (standalone) -->
+                                      <template v-else-if="detail.type === 'shares' && formatMove(move).move.move_type !== 'dispose-stock'">
+                                        <span class="text-gray-600 font-medium">{{ detail.value }}</span>
+                                        <span class="text-gray-500">{{ detail.value === 1 ? 'share' : 'shares' }}</span>
+                                        <span v-if="formatMove(move).details.some(d => d.type === 'chain' && d.index > detail.index)" class="text-gray-500">in</span>
+                                      </template>
+                                      
+                                      <!-- Defunct chain badge (for disposal) -->
+                                      <span v-else-if="detail.type === 'chain' && formatMove(move).move.move_type === 'dispose-stock'"
+                                            class="inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-semibold text-white shadow-sm"
+                                            :class="getChainButtonClass(detail.value)">
+                                        {{ detail.value }}
+                                      </span>
+                                      
+                                      <!-- Surviving chain badge (for trades) -->
+                                      <template v-else-if="detail.type === 'surviving-chain'">
+                                        <span class="text-gray-500">for</span>
+                                        <span class="text-gray-600 font-medium">{{ Math.floor((formatMove(move).move.disposal_actions?.find(a => a.action === 'trade')?.shares || 0) / 2) }}</span>
+                                        <span class="text-gray-500">in</span>
+                                        <span class="inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-semibold text-white shadow-sm"
+                                              :class="getChainButtonClass(detail.value)">
+                                          {{ detail.value }}
+                                        </span>
+                                      </template>
+                                      
+                                      <!-- Regular chain badge -->
+                                      <span v-else-if="detail.type === 'chain'"
+                                            class="inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-semibold text-white shadow-sm"
+                                            :class="getChainButtonClass(detail.value)">
+                                        {{ detail.value }}
+                                      </span>
+                                    </template>
                                 </div>
-                            </div>
-                        </li>
-                    </ul>
+                            </li>
+                        </ul>
+                    </div>
+                  </div>
                 </div>
             </div>
         </div>

@@ -9,7 +9,7 @@
     <div v-if="!hand || hand.length === 0" class="text-xs text-gray-500">
       No tiles in hand yet.
     </div>
-    <div class="flex flex-wrap gap-1.5">
+    <div class="hand-tiles-container">
       <button
         v-for="entry in handEntries"
         :key="entry.key"
@@ -107,8 +107,23 @@ export default {
 </script>
 
 <style scoped lang="postcss">
+.hand-tiles-container {
+  display: grid;
+  grid-template-columns: repeat(13, minmax(0, 1fr));
+  gap: 0.125rem;
+  max-width: 100%;
+}
+
+@media (min-width: 640px) {
+  .hand-tiles-container {
+    gap: 0.25rem;
+  }
+}
+
 .hand-tile {
-  @apply rounded border border-gray-200 px-2.5 py-1.5 text-xs font-medium shadow-sm transition-colors hover:ring-2 hover:ring-gray-300 focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:outline-none;
+  @apply rounded border border-gray-200 text-[10px] sm:text-xs lg:text-sm font-medium shadow-sm transition-colors hover:ring-2 hover:ring-gray-300 focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:outline-none aspect-square flex items-center justify-center;
+  min-width: 0;
+  width: 100%;
 }
 .hand-tile--neutral {
   @apply bg-white text-gray-800 hover:bg-gray-50;

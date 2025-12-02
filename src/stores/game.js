@@ -240,6 +240,25 @@ export const useGameStore = defineStore({
       })
       await this.refreshGameState()
     },
+    async disposeStock(actions) {
+      if (!this.gameId) return
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      await supabase.functions.invoke('process-turn', {
+        body: JSON.stringify({
+          game_id: this.gameId,
+          move: { 
+            type: 'dispose-stock',
+            actions: actions
+          }
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      })
+      await this.refreshGameState()
+    },
     teardown() {
       if (this.subscription) {
         supabase.removeChannel(this.subscription)

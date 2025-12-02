@@ -1,109 +1,117 @@
 <template>
-  <div class="card overflow-x-auto">
-    <h2 class="mt-4 mb-3 text-base">Scoreboard</h2>
-    <div v-if="players.length === 0" class="text-xs text-gray-500 mb-3">
+  <div class="card overflow-x-auto pt-4">
+    <!-- <h2 class="mt-4 mb-3 text-base">Scoreboard</h2> -->
+    <div v-if="players.length === 0" class="text-sm text-gray-500 mb-3">
       No players yet
     </div>
-    <table class="w-full text-xs border-collapse">
+    <table class="w-full text-sm border-collapse">
       <thead>
         <tr class="border-b-2 border-gray-300">
-          <th class="text-center py-2 px-1 font-semibold text-gray-900 bg-gray-50 sticky left-0 z-10 text-xs w-6"></th>
+          <th class="text-left py-2 px-2 font-semibold text-gray-900 bg-gray-50 sticky left-0 z-10 text-sm min-w-[120px]">Player</th>
           <th
-            v-for="player in players"
-            :key="player.id"
-            class="text-center py-2 px-1.5 font-semibold text-xs min-w-[45px]"
-            :class="isCurrentPlayer(player.id) ? 'bg-violet-100 text-violet-900' : 'bg-gray-50 text-gray-900'"
-            :title="getUsernameById(player.id)"
+            v-for="chain in orderedChains"
+            :key="chain.id"
+            class="text-center py-2 px-2 font-bold text-sm min-w-[45px]"
+            :class="getChainHeaderClass(chain.name)"
           >
-            <div class="flex flex-col items-center gap-1">
+            {{ getChainInitial(chain.name) }}
+          </th>
+          <th class="text-center py-2 px-2 font-semibold text-gray-900 text-sm min-w-[60px]">Cash</th>
+          <th class="text-center py-2 px-2 font-semibold text-gray-900 text-sm min-w-[60px]">Net</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Player rows -->
+        <tr
+          v-for="player in players"
+          :key="player.id"
+          class="border-b border-gray-200 hover:bg-gray-50 transition-colors"
+          :class="isCurrentPlayer(player.id) ? 'bg-violet-50' : ''"
+        >
+          <td class="py-2 px-2 sticky left-0 z-10 bg-white" :class="isCurrentPlayer(player.id) ? 'bg-violet-50' : 'bg-white'">
+            <div class="flex items-center gap-2">
+              <img
+                v-if="getPlayerAvatar(player.id)"
+                :src="getPlayerAvatar(player.id)"
+                :alt="getUsernameById(player.id)"
+                class="w-8 h-8 rounded-full object-cover border-2 shadow-sm"
+                :class="isCurrentPlayer(player.id) ? 'border-violet-400' : 'border-gray-300'"
+              />
               <div
-                class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                v-else
+                class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white shadow-sm"
                 :style="{ backgroundColor: getPlayerColor(player.id) }"
               >
                 {{ getUserInitial(player.id) }}
               </div>
-              <span v-if="isCurrentPlayer(player.id)" class="text-[10px] text-violet-600 leading-none">●</span>
+              <div class="flex items-center gap-1.5">
+                <span class="font-semibold text-gray-900 text-sm">{{ getUsernameById(player.id) }}</span>
+                <span v-if="isCurrentPlayer(player.id)" class="h-2 w-2 rounded-full bg-violet-600" title="Current Turn"></span>
+              </div>
             </div>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        <!-- Chain stock rows -->
-        <tr
-          v-for="chain in orderedChains"
-          :key="chain.id"
-          class="border-b border-gray-200 hover:bg-gray-50 transition-colors"
-        >
-          <td class="py-1.5 px-1 font-black text-xs sticky left-0 z-10 text-center bg-white" :title="chain.name">
-            <span :class="getChainTextColorClass(chain.name)">{{ getChainInitial(chain.name) }}</span>
           </td>
           <td
-            v-for="player in players"
-            :key="player.id"
-            class="text-center py-1.5 px-1.5 tabular-nums text-xs"
+            v-for="chain in orderedChains"
+            :key="chain.id"
+            class="text-center py-2 px-2 tabular-nums text-sm"
           >
             <span v-if="getPlayerStock(player, chain.name) > 0" class="font-semibold text-gray-900">
               {{ getPlayerStock(player, chain.name) }}
             </span>
-            <span v-else class="text-gray-300 text-[10px]">—</span>
+            <span v-else class="text-gray-300 text-xs">—</span>
+          </td>
+          <td class="text-center py-2 px-2 tabular-nums text-sm font-medium text-gray-700">
+            {{ formatCashCompact(player.cash) }}
+          </td>
+          <td class="text-center py-2 px-2 tabular-nums text-sm font-bold text-gray-900 bg-emerald-50">
+            {{ formatCashCompact(player.netWorth) }}
           </td>
         </tr>
         
         <!-- Separator -->
         <tr class="border-t-2 border-gray-300">
-          <td colspan="100%" class="h-2"></td>
+          <td colspan="100%" class="h-2 bg-gray-50"></td>
         </tr>
         
-        <!-- Cash row -->
-        <tr class="bg-gray-50 border-b border-gray-200">
-          <td class="py-1.5 px-1 text-[10px] font-bold text-gray-700 uppercase sticky left-0 bg-gray-50 z-10 text-center">$</td>
+        <!-- Chain info rows -->
+        <tr class="border-b border-gray-200">
+          <td class="py-2 px-2 text-xs font-bold text-gray-700 uppercase sticky left-0 z-10 bg-blue-0">Available</td>
           <td
-            v-for="player in players"
-            :key="'cash-' + player.id"
-            class="text-center py-1.5 px-1.5 tabular-nums text-xs font-medium text-gray-700"
+            v-for="chain in orderedChains"
+            :key="'available-' + chain.id"
+            class="text-center py-2 px-2 tabular-nums text-sm font-semibold text-gray-900 bg-blue-0"
           >
-            {{ formatCashCompact(player.cash) }}
+            {{ chain.stockRemaining }}
           </td>
+          <td colspan="2" class=""></td>
         </tr>
         
-        <!-- Net Worth row -->
-        <tr class="bg-emerald-50 font-medium">
-          <td class="py-1.5 px-1 text-[10px] font-bold text-gray-700 uppercase sticky left-0 bg-emerald-50 z-10 text-center">Σ</td>
+        <tr class="border-b border-gray-200">
+          <td class="py-2 px-2 text-xs font-bold text-gray-700 uppercase sticky left-0 z-10 bg-blue-0">Size</td>
           <td
-            v-for="player in players"
-            :key="'net-' + player.id"
-            class="text-center py-1.5 px-1.5 tabular-nums text-xs font-bold text-gray-900"
+            v-for="chain in orderedChains"
+            :key="'size-' + chain.id"
+            class="text-center py-2 px-2 tabular-nums text-sm font-semibold text-gray-900 bg-blue-0"
           >
-            {{ formatCashCompact(player.netWorth) }}
+            {{ chain.size > 0 ? chain.size : '—' }}
           </td>
+          <td colspan="2" class="bg-blue-0"></td>
         </tr>
         
+        <tr class="bg-blue-0">
+          <td class="py-2 px-2 text-xs font-bold text-gray-700 uppercase sticky left-0 z-10 bg-blue-0">Price</td>
+          <td
+            v-for="chain in orderedChains"
+            :key="'price-' + chain.id"
+            class="text-center py-2 px-2 tabular-nums text-sm font-semibold text-gray-900 bg-blue-0"
+          >
+            <span v-if="chain.size > 0">${{ formatPriceCompact(getStockPrice(chain.size, chain.name)) }}</span>
+            <span v-else class="text-gray-400">—</span>
+          </td>
+          <td colspan="2" class="bg-blue-0"></td>
+        </tr>
       </tbody>
     </table>
-    
-    <!-- Chain info summary -->
-    <div class="mt-3 pt-3 border-t border-gray-200">
-      <div class="grid grid-cols-7 gap-1 text-[10px]">
-        <div
-          v-for="chain in orderedChains"
-          :key="'info-' + chain.id"
-          class="text-center"
-        >
-          <div class="font-bold text-white px-1 py-0.5 rounded mb-0.5" :class="getChainHeaderClass(chain.name)">
-            {{ getChainInitial(chain.name) }}
-          </div>
-          <div class="text-gray-600">
-            <div>{{ chain.size > 0 ? chain.size : '—' }}</div>
-            <div class="font-semibold text-gray-900">{{ chain.stockRemaining }}</div>
-            <div v-if="chain.size > 0" class="text-gray-700">${{ formatPriceCompact(getStockPrice(chain.size, chain.name)) }}</div>
-            <div v-else class="text-gray-400">—</div>
-          </div>
-        </div>
-      </div>
-      <div class="text-[9px] text-gray-500 mt-1 text-center">
-        Size • Available • Price
-      </div>
-    </div>
   </div>
 </template>
 
@@ -132,6 +140,10 @@ export default {
     usernameMap: {
       type: Object,
       default: () => ({})
+    },
+    avatarMap: {
+      type: Object,
+      default: () => ({})
     }
   },
   mounted() {
@@ -155,7 +167,7 @@ export default {
     },
     getChainHeaderClass(chainName) {
       const boardClass = getChainBoardClass(chainName)
-      return boardClass
+      return [boardClass, 'text-white']
     },
     getChainTextColorClass(chainName) {
       // Map chain names to text color classes
@@ -182,6 +194,9 @@ export default {
     getUserInitial(playerId) {
       const username = this.getUsernameById(playerId)
       return username.charAt(0).toUpperCase()
+    },
+    getPlayerAvatar(playerId) {
+      return this.avatarMap[playerId] || null
     },
     getPlayerColor(playerId) {
       // Generate a consistent color based on player ID
