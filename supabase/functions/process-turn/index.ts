@@ -210,6 +210,109 @@ const CHAIN_TIERS: Record<string, number> = {
   'Sackson': 0
 };
 
+// Bonus payout table for mergers based on defunct chain size and tier
+const BONUS_PAYOUT_TABLE_TIERS: Record<string, Array<{ maxSize: number; majority: number; minority: number }>> = {
+  'Tier 0': [ // Tower, Luxor
+    { maxSize: 2, majority: 2000, minority: 1000 },
+    { maxSize: 3, majority: 2000, minority: 1000 },
+    { maxSize: 4, majority: 3000, minority: 1500 },
+    { maxSize: 5, majority: 3000, minority: 1500 },
+    { maxSize: 10, majority: 4000, minority: 2000 },
+    { maxSize: 20, majority: 5000, minority: 2500 },
+    { maxSize: 30, majority: 6000, minority: 3000 },
+    { maxSize: 40, majority: 7000, minority: 3500 },
+    { maxSize: Infinity, majority: 8000, minority: 4000 }
+  ],
+  'Tier 1': [ // American, Worldwide, Festival
+    { maxSize: 2, majority: 3000, minority: 1500 },
+    { maxSize: 3, majority: 3000, minority: 1500 },
+    { maxSize: 4, majority: 4000, minority: 2000 },
+    { maxSize: 5, majority: 4000, minority: 2000 },
+    { maxSize: 10, majority: 5000, minority: 2500 },
+    { maxSize: 20, majority: 6000, minority: 3000 },
+    { maxSize: 30, majority: 7000, minority: 3500 },
+    { maxSize: 40, majority: 8000, minority: 4000 },
+    { maxSize: Infinity, majority: 9000, minority: 4500 }
+  ],
+  'Tier 2': [ // Imperial, Continental
+    { maxSize: 2, majority: 5000, minority: 2500 },
+    { maxSize: 3, majority: 5000, minority: 2500 },
+    { maxSize: 4, majority: 6000, minority: 3000 },
+    { maxSize: 5, majority: 6000, minority: 3000 },
+    { maxSize: 10, majority: 7000, minority: 3500 },
+    { maxSize: 20, majority: 8000, minority: 4000 },
+    { maxSize: 30, majority: 9000, minority: 4500 },
+    { maxSize: 40, majority: 10000, minority: 5000 },
+    { maxSize: Infinity, majority: 11000, minority: 5500 }
+  ]
+};
+
+function calculateMergerBonuses(chainSize: number, chainName?: string | null): { majority: number; minority: number } {
+  const tier = CHAIN_TIERS[chainName ?? 'Sackson'];
+  const tierKey = `Tier ${tier}` as keyof typeof BONUS_PAYOUT_TABLE_TIERS;
+  const payoutTable = BONUS_PAYOUT_TABLE_TIERS[tierKey] || BONUS_PAYOUT_TABLE_TIERS['Tier 0'];
+
+  const entry = payoutTable.find((entry) => chainSize <= entry.maxSize) ||
+    payoutTable[payoutTable.length - 1];
+  return {
+    majority: entry.majority,
+    minority: entry.minority,
+  };
+}
+
+function payMergerBonuses(
+  defunctChain: ChainRecord,
+  allPlayers: PlayerStateRecord[],
+  bonuses: { majority: number; minority: number }
+): void {
+  const shareholders: Array<{ player: PlayerStateRecord; shares: number }> = [];
+  
+  allPlayers.forEach((player) => {
+    const shares = player.stocks?.[defunctChain.name] ?? 0;
+    if (shares > 0) {
+      shareholders.push({ player, shares });
+    }
+  });
+
+  if (shareholders.length === 0) {
+    return;
+  }
+
+  shareholders.sort((a, b) => b.shares - a.shares);
+
+  const maxShares = shareholders[0].shares;
+  const majorityHolders = shareholders.filter(s => s.shares === maxShares);
+  const minorityHolders = shareholders.filter(s => s.shares < maxShares && s.shares > 0);
+
+  // Pay majority bonus(es)
+  if (majorityHolders.length === 1) {
+    majorityHolders[0].player.cash = (majorityHolders[0].player.cash ?? 0) + bonuses.majority;
+  } else if (majorityHolders.length > 1) {
+    // Tie: combine bonuses and divide equally
+    const totalBonus = bonuses.majority + bonuses.minority;
+    const perPlayer = Math.floor(totalBonus / majorityHolders.length);
+    majorityHolders.forEach(({ player }) => {
+      player.cash = (player.cash ?? 0) + perPlayer;
+    });
+  }
+
+  // Pay minority bonus(es) if there are non-majority holders
+  if (minorityHolders.length > 0 && majorityHolders.length === 1) {
+    const secondMaxShares = minorityHolders[0].shares;
+    const secondHolders = minorityHolders.filter(s => s.shares === secondMaxShares);
+    
+    if (secondHolders.length === 1) {
+      secondHolders[0].player.cash = (secondHolders[0].player.cash ?? 0) + bonuses.minority;
+    } else {
+      // Tie: divide minority bonus equally
+      const perPlayer = Math.floor(bonuses.minority / secondHolders.length);
+      secondHolders.forEach(({ player }) => {
+        player.cash = (player.cash ?? 0) + perPlayer;
+      });
+    }
+  }
+}
+
 // Base prices by chain size
 const SIZE_PRICE_TABLE = [
   { maxSize: 2, basePrice: 200 },
@@ -687,6 +790,14 @@ serve(async (req: Request) => {
       const mergingChains = chains.filter(
         (chain) => mergeChainIds.includes(chain.id) && chain.id !== survivorId,
       );
+      
+      // Pay bonuses for defunct chains before merging
+      mergingChains.forEach((defunctChain) => {
+        const defunctChainSize = defunctChain.tiles?.length ?? 0;
+        const bonuses = calculateMergerBonuses(defunctChainSize, defunctChain.name);
+        payMergerBonuses(defunctChain, existingGameState.players ?? [], bonuses);
+      });
+      
       assignConnectedClusterToChain(survivorId, pendingAction.tile, board, chains);
       mergingChains.forEach((chain) => {
         assignTilesToChain(survivorId, chain.tiles, board.tiles, chains);
