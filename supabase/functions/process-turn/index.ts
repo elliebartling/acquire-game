@@ -831,15 +831,21 @@ serve(async (req: Request) => {
       );
       
       // Pay bonuses and setup disposal for largest defunct chain
-      const largestDefunct = mergingChains.reduce((largest, chain) => {
-        const size = chain.tiles?.length ?? 0;
-        const largestSize = largest ? (largest.tiles?.length ?? 0) : 0;
-        return size > largestSize ? chain : largest;
-      }, mergingChains[0]);
+      const largestDefunct = mergingChains.length > 0 
+        ? mergingChains.reduce((largest, chain) => {
+            const size = chain.tiles?.length ?? 0;
+            const largestSize = largest ? (largest.tiles?.length ?? 0) : 0;
+            return size > largestSize ? chain : largest;
+          }, mergingChains[0])
+        : null;
       
-      const defunctChainSize = largestDefunct.tiles?.length ?? 0;
-      const bonuses = calculateMergerBonuses(defunctChainSize, largestDefunct.name);
-      payMergerBonuses(largestDefunct, existingGameState.players ?? [], bonuses);
+      // Capture defunct chain size BEFORE merging clears the tiles
+      const defunctChainSize = largestDefunct ? (largestDefunct.tiles?.length ?? 0) : 0;
+      
+      if (largestDefunct) {
+        const bonuses = calculateMergerBonuses(defunctChainSize, largestDefunct.name);
+        payMergerBonuses(largestDefunct, existingGameState.players ?? [], bonuses);
+      }
       
       assignConnectedClusterToChain(survivorId, pendingAction.tile, board, chains);
       mergingChains.forEach((chain) => {
@@ -849,32 +855,38 @@ serve(async (req: Request) => {
       });
       
       // Setup stock disposal for players who have shares in the defunct chain
-      const playersWithStock = (existingGameState.players ?? []).filter((p) => {
-        const shares = p.stocks?.[largestDefunct.name] ?? 0;
-        return shares > 0;
-      });
-      
-      if (playersWithStock.length > 0) {
-        const turnOrder = existingGameState.turnOrder ?? [];
-        const disposalOrder = getPlayersInOrder(userData.user.id, playersWithStock, turnOrder);
-        const firstPlayerId = disposalOrder[0];
-        const firstPlayerShares = playersWithStock.find(p => p.id === firstPlayerId)?.stocks?.[largestDefunct.name] ?? 0;
+      if (largestDefunct) {
+        const playersWithStock = (existingGameState.players ?? []).filter((p) => {
+          const shares = p.stocks?.[largestDefunct.name] ?? 0;
+          return shares > 0;
+        });
         
-        updatedPendingAction = {
-          type: "dispose-stock",
-          playerId: firstPlayerId,
-          defunctChainId: largestDefunct.id,
-          defunctChainName: largestDefunct.name,
-          defunctChainSize,
-          survivingChainId: survivorId,
-          survivingChainName: survivor.name,
-          playerShares: firstPlayerShares,
-          playerOrder: disposalOrder,
-          currentIndex: 0,
-          mergerMakerId: userData.user.id,
-        };
+        if (playersWithStock.length > 0) {
+          const turnOrder = existingGameState.turnOrder ?? [];
+          const disposalOrder = getPlayersInOrder(userData.user.id, playersWithStock, turnOrder);
+          const firstPlayerId = disposalOrder[0];
+          const firstPlayerShares = playersWithStock.find(p => p.id === firstPlayerId)?.stocks?.[largestDefunct.name] ?? 0;
+          
+          updatedPendingAction = {
+            type: "dispose-stock",
+            playerId: firstPlayerId,
+            defunctChainId: largestDefunct.id,
+            defunctChainName: largestDefunct.name,
+            defunctChainSize,
+            survivingChainId: survivorId,
+            survivingChainName: survivor.name,
+            playerShares: firstPlayerShares,
+            playerOrder: disposalOrder,
+            currentIndex: 0,
+            mergerMakerId: userData.user.id,
+          };
+        } else {
+          // No disposal needed, deal tile and clear pending action
+          dealTilesToPlayer(existingGameState, userData.user.id, 1);
+          updatedPendingAction = null;
+        }
       } else {
-        // No disposal needed, deal tile and clear pending action
+        // No defunct chain (shouldn't happen in a real merger)
         dealTilesToPlayer(existingGameState, userData.user.id, 1);
         updatedPendingAction = null;
       }
