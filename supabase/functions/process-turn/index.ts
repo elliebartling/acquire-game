@@ -128,12 +128,14 @@ function ensureChains(chains: ChainRecord[] | undefined, chainNames: string[] = 
     return chains.map((chain) => ({
       ...chain,
       tiles: [...(chain.tiles ?? [])],
+      stockRemaining: chain.stockRemaining ?? 25,
     }));
   }
   return chainNames.map((name, index) => ({
     id: `chain-${index}`,
     name,
     tiles: [],
+    stockRemaining: 25,
   }));
 }
 
@@ -406,7 +408,7 @@ function calculateNetWorth(
 }
 
 function updatePublicChains(
-  publicChains: { id: string; name: string; size?: number; isSafe?: boolean }[] | undefined,
+  publicChains: { id: string; name: string; size?: number; isSafe?: boolean; stockRemaining?: number }[] | undefined,
   internalChains: ChainRecord[],
 ) {
   const fallback = internalChains.map((chain) => ({
@@ -414,6 +416,7 @@ function updatePublicChains(
     name: chain.name,
     size: (chain.tiles ?? []).length,
     isSafe: false,
+    stockRemaining: chain.stockRemaining ?? 25,
   }));
   if (!publicChains || publicChains.length === 0) {
     return fallback;
@@ -421,9 +424,11 @@ function updatePublicChains(
   return publicChains.map((publicChain) => {
     const internal = internalChains.find((chain) => chain.id === publicChain.id);
     const size = internal ? (internal.tiles ?? []).length : publicChain.size ?? 0;
+    const stockRemaining = internal ? (internal.stockRemaining ?? 25) : publicChain.stockRemaining ?? 25;
     return {
       ...publicChain,
       size,
+      stockRemaining,
     };
   });
 }
@@ -597,7 +602,7 @@ serve(async (req: Request) => {
 
     if (
       pendingAction &&
-      !["start-chain", "resolve-merger", "purchase", "complete-buy"].includes(
+      !["start-chain", "resolve-merger", "purchase", "complete-buy", "dispose-stock"].includes(
         moveRecord.move_type,
       )
     ) {
