@@ -132,7 +132,18 @@ serve(async (req: Request) => {
     existingGameState.chains = chains;
 
     // Get current phase from game state, or migrate from legacy pendingAction
-    let currentPhase: GamePhase | null = existingGameState.phase ?? null;
+    let currentPhase: GamePhase | null = null;
+    
+    // Validate and normalize phase from game state
+    const rawPhase = existingGameState.phase;
+    if (rawPhase && typeof rawPhase === 'object' && 'type' in rawPhase) {
+      // Phase exists and has a type field - use it
+      currentPhase = rawPhase as GamePhase;
+    } else if (rawPhase) {
+      // Phase exists but is invalid format - clear it
+      console.warn("Invalid phase format detected, clearing:", rawPhase);
+      existingGameState.phase = null;
+    }
     
     // Backward compatibility: migrate old pendingAction to phase
     if (!currentPhase && (existingGameState as any).pendingAction) {
@@ -143,9 +154,6 @@ serve(async (req: Request) => {
         delete (existingGameState as any).pendingAction;
       }
     }
-    
-    // Initialize to tilePlacement if no phase exists (but don't set it yet - let handlers do it)
-    // This is just for validation purposes
 
     // Route to appropriate handler based on move type and phase
     let handlerResult;
@@ -153,20 +161,21 @@ serve(async (req: Request) => {
 
     try {
       if (moveType === "tile") {
-        // Enforce turn order
-        if (currentPlayerId && currentPlayerId !== userData.user.id) {
-          throw new Error("Not your turn");
-        }
-        if (currentPhase && currentPhase.type !== "tilePlacement") {
-          throw new Error(`Cannot place tile during ${currentPhase.type} phase.`);
-        }
         // Ensure we have a tile value
         if (!moveRecord.move_value) {
           throw new Error("Missing tile value.");
         }
-        // Ensure phase is set for tile placement
-        if (!currentPhase && currentPlayerId) {
-          currentPhase = { type: "tilePlacement", playerId: currentPlayerId };
+        // Ensure phase is set for tile placement (use current player or the user making the move)
+        const tilePlayerId = currentPlayerId || userData.user.id;
+        if (!currentPhase || !currentPhase.type) {
+          currentPhase = { type: "tilePlacement", playerId: tilePlayerId };
+        }
+        // Enforce turn order
+        if (currentPlayerId && currentPlayerId !== userData.user.id) {
+          throw new Error("Not your turn");
+        }
+        if (currentPhase.type !== "tilePlacement") {
+          throw new Error(`Cannot place tile during ${currentPhase.type} phase.`);
         }
         handlerResult = handleTilePlacement(
           existingGameState,
