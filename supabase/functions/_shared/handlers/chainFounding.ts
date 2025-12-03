@@ -3,6 +3,7 @@ import { HandlerResult, GameEvent } from "../events.ts";
 import { GameStateRecord, PlayerStateRecord } from "../gameState.ts";
 import { ChainRecord, assignTilesToChain } from "../boardUtils.ts";
 import { dealTilesToPlayer } from "../gameState.ts";
+import { buildBuyPendingAction } from "./stockPurchase.ts";
 
 export function handleChainFounding(
   gameState: GameStateRecord,
@@ -67,11 +68,21 @@ export function handleChainFounding(
     });
   }
 
+  // Offer stock buying after chain formation
+  let nextPhase: GamePhase | null = null;
+  const buyAction = buildBuyPendingAction(
+    playerId,
+    player.cash ?? 0,
+    chains,
+  );
+  if (buyAction) {
+    nextPhase = buyAction;
+  }
+
   return {
     updatedState: gameState,
     events,
-    nextPhase: null,
+    nextPhase,
     moveDescription: events.map((e) => e.description).join("; "),
   };
 }
-

@@ -5,6 +5,7 @@ import { ChainRecord, assignConnectedClusterToChain, assignTilesToChain } from "
 import { getPlayersInOrder } from "../gameLogic.ts";
 import { handleBonusPayout } from "./bonusPayout.ts";
 import { dealTilesToPlayer } from "../gameState.ts";
+import { buildBuyPendingAction } from "./stockPurchase.ts";
 
 export function handleMergerResolution(
   gameState: GameStateRecord,
@@ -101,27 +102,53 @@ export function handleMergerResolution(
         defunctChains: [], // For now, handle single merger
       };
     } else {
-      // No disposal needed, draw tile
-      const drawn = dealTilesToPlayer(gameState, playerId, 1);
-      if (drawn.length > 0) {
-        events.push({
-          type: "TilesDrawn",
+      // No disposal needed, offer stock buying
+      const mergerMaker = players.find((p) => p.id === playerId);
+      if (mergerMaker) {
+        const buyAction = buildBuyPendingAction(
           playerId,
-          count: drawn.length,
-          description: `Player drew ${drawn.length} tile(s)`,
-        });
+          mergerMaker.cash ?? 0,
+          chains,
+        );
+        if (buyAction) {
+          nextPhase = buyAction;
+        } else {
+          // No stock available, draw tile
+          const drawn = dealTilesToPlayer(gameState, playerId, 1);
+          if (drawn.length > 0) {
+            events.push({
+              type: "TilesDrawn",
+              playerId,
+              count: drawn.length,
+              description: `Player drew ${drawn.length} tile(s)`,
+            });
+          }
+        }
       }
     }
   } else {
-    // No defunct chain (shouldn't happen in a real merger)
-    const drawn = dealTilesToPlayer(gameState, playerId, 1);
-    if (drawn.length > 0) {
-      events.push({
-        type: "TilesDrawn",
+    // No defunct chain (shouldn't happen in a real merger), offer stock buying
+    const mergerMaker = players.find((p) => p.id === playerId);
+    if (mergerMaker) {
+      const buyAction = buildBuyPendingAction(
         playerId,
-        count: drawn.length,
-        description: `Player drew ${drawn.length} tile(s)`,
-      });
+        mergerMaker.cash ?? 0,
+        chains,
+      );
+      if (buyAction) {
+        nextPhase = buyAction;
+      } else {
+        // No stock available, draw tile
+        const drawn = dealTilesToPlayer(gameState, playerId, 1);
+        if (drawn.length > 0) {
+          events.push({
+            type: "TilesDrawn",
+            playerId,
+            count: drawn.length,
+            description: `Player drew ${drawn.length} tile(s)`,
+          });
+        }
+      }
     }
   }
 

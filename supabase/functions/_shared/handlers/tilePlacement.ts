@@ -233,6 +233,21 @@ export function handleTilePlacement(
     }
   }
 
+  // If no next phase set and tile was drawn, offer stock buying
+  if (!nextPhase && shouldDraw) {
+    const player = players.find((p) => p.id === playerId);
+    if (player) {
+      const buyAction = buildBuyPendingAction(
+        playerId,
+        player.cash ?? 0,
+        chains,
+      );
+      if (buyAction) {
+        nextPhase = buyAction;
+      }
+    }
+  }
+
   // Generate move description
   const moveDescription = events
     .map((e) => e.description)
