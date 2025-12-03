@@ -26,7 +26,7 @@ const gameId = computed(() => route.params.id)
 const publicState = computed(() => gameStore.publicState)
 const playerView = computed(() => gameStore.playerView)
 const moves = computed(() => publicState.value?.moves || [])
-const pendingAction = computed(() => playerView.value?.pendingAction || null)
+const phase = computed(() => playerView.value?.phase || publicState.value?.phase || null)
 const handTileHints = computed(() =>
   buildTileHints(playerView.value?.hand || [], publicState.value?.board, publicState.value?.chains)
 )
@@ -291,6 +291,13 @@ function getSurvivingChainStockRemaining(chainId) {
   return chain?.stockRemaining ?? 0
 }
 
+function getPlayerSharesForDisposal(phase) {
+  if (!phase || phase.type !== 'disposalLoop') return 0
+  const currentPlayerId = phase.queue.playerOrder[phase.currentIndex]
+  if (!currentPlayerId || !playerView.value?.stocks) return 0
+  return playerView.value.stocks[phase.queue.defunctChainName] ?? 0
+}
+
 function chainClasses(name) {
   return getChainButtonClass(name)
 }
@@ -392,12 +399,12 @@ watch(
                   />
                   
                   <div
-                    v-if="pendingAction?.type === 'buy-stock'"
+                    v-if="phase?.type === 'stockBuy'"
                     class="mt-3 pt-3 border-t border-gray-200"
                   >
                     <StockBuyingWidget
                       :chains="publicState.chains"
-                      :max-shares="pendingAction.remaining || 3"
+                      :max-shares="phase.remaining || 3"
                       :player-cash="playerView?.cash || 0"
                       @purchase="handleBatchPurchase"
                       @skip="handleSkipPurchase"
@@ -405,15 +412,15 @@ watch(
                   </div>
                   
                   <div
-                    v-if="pendingAction?.type === 'dispose-stock'"
+                    v-if="phase?.type === 'disposalLoop'"
                     class="mt-3 pt-3 border-t border-gray-200"
                   >
                     <StockDisposalWidget
-                      :defunct-chain-name="pendingAction.defunctChainName"
-                      :defunct-chain-size="pendingAction.defunctChainSize"
-                      :surviving-chain-name="pendingAction.survivingChainName"
-                      :player-shares="pendingAction.playerShares"
-                      :surviving-chain-stock-remaining="getSurvivingChainStockRemaining(pendingAction.survivingChainId)"
+                      :defunct-chain-name="phase.queue.defunctChainName"
+                      :defunct-chain-size="phase.queue.defunctChainSize"
+                      :surviving-chain-name="phase.queue.survivingChainName"
+                      :player-shares="getPlayerSharesForDisposal(phase)"
+                      :surviving-chain-stock-remaining="getSurvivingChainStockRemaining(phase.queue.survivingChainId)"
                       @dispose="handleStockDisposal"
                     />
                   </div>
@@ -430,17 +437,17 @@ watch(
                     @play-tile="playTile"
                 />
                 <div
-                  v-if="pendingAction?.type === 'start-chain'"
+                  v-if="phase?.type === 'foundChain'"
                   class="mt-4 border-t border-gray-100 pt-3"
                 >
                   <h3 class="mb-2 text-xs font-semibold text-gray-900">Form a hotel</h3>
                   <p class="text-xs text-gray-600 mb-2">
                     Choose a chain for tiles
-                    <span class="font-medium text-gray-900">{{ pendingAction.tiles.join(', ') }}</span>
+                    <span class="font-medium text-gray-900">{{ phase.tiles.join(', ') }}</span>
                   </p>
                   <div class="flex flex-wrap gap-1.5">
                     <button
-                      v-for="option in pendingAction.options"
+                      v-for="option in phase.options"
                       :key="option.id"
                       class="px-3 py-1.5 rounded font-semibold text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                       :class="chainClasses(option.name)"
@@ -451,17 +458,17 @@ watch(
                   </div>
                 </div>
                 <div
-                  v-if="pendingAction?.type === 'resolve-merger'"
+                  v-if="phase?.type === 'mergerChoice'"
                   class="mt-4 border-t border-gray-100 pt-3"
                 >
                   <h3 class="mb-2 text-xs font-semibold text-gray-900">Resolve merger</h3>
                   <p class="text-xs text-gray-600 mb-2">
-                    You have multiple bonded hotels touching <span class="font-medium text-gray-900">{{ pendingAction.tile }}</span>.
+                    You have multiple bonded hotels touching <span class="font-medium text-gray-900">{{ phase.tile }}</span>.
                     Choose which hotel survives.
                   </p>
                   <div class="flex flex-wrap gap-1.5">
                     <button
-                      v-for="option in pendingAction.options"
+                      v-for="option in phase.options"
                       :key="option.id"
                       class="px-3 py-1.5 rounded font-semibold text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                       :class="chainClasses(option.name)"

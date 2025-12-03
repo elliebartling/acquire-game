@@ -33,7 +33,7 @@ export function handleTurnAdvancement(
     }
   }
 
-  const nextPhase: GamePhase = nextPlayerId
+  const nextPhase: GamePhase | null = nextPlayerId
     ? { type: "tilePlacement", playerId: nextPlayerId }
     : null;
 
