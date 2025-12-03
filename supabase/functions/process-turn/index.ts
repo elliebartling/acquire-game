@@ -136,13 +136,19 @@ serve(async (req: Request) => {
     
     // Validate and normalize phase from game state
     const rawPhase = existingGameState.phase;
-    if (rawPhase && typeof rawPhase === 'object' && 'type' in rawPhase) {
-      // Phase exists and has a type field - use it
+    console.log("Raw phase from game state:", JSON.stringify(rawPhase));
+    
+    if (rawPhase && typeof rawPhase === 'object' && 'type' in rawPhase && typeof (rawPhase as any).type === 'string') {
+      // Phase exists and has a valid type field - use it
       currentPhase = rawPhase as GamePhase;
+      console.log("Using existing phase:", currentPhase.type);
     } else if (rawPhase) {
       // Phase exists but is invalid format - clear it
-      console.warn("Invalid phase format detected, clearing:", rawPhase);
+      console.warn("Invalid phase format detected, clearing:", JSON.stringify(rawPhase));
       existingGameState.phase = null;
+      currentPhase = null;
+    } else {
+      console.log("No phase found in game state");
     }
     
     // Backward compatibility: migrate old pendingAction to phase
@@ -167,16 +173,28 @@ serve(async (req: Request) => {
         }
         // Ensure phase is set for tile placement (use current player or the user making the move)
         const tilePlayerId = currentPlayerId || userData.user.id;
-        if (!currentPhase || !currentPhase.type) {
+        
+        // Always ensure we have a valid tilePlacement phase
+        console.log("Before phase check - currentPhase:", JSON.stringify(currentPhase));
+        if (!currentPhase || typeof currentPhase !== 'object' || !currentPhase.type || currentPhase.type !== "tilePlacement") {
+          // If phase is invalid or not tilePlacement, initialize/reset it
+          console.log("Resetting phase to tilePlacement for player:", tilePlayerId);
           currentPhase = { type: "tilePlacement", playerId: tilePlayerId };
+          // Update game state immediately
+          existingGameState.phase = currentPhase;
         }
+        
+        // Double-check phase is valid before proceeding
+        console.log("After phase check - currentPhase:", JSON.stringify(currentPhase));
+        if (!currentPhase || typeof currentPhase !== 'object' || !currentPhase.type || currentPhase.type !== "tilePlacement") {
+          throw new Error(`Invalid phase state after validation: ${JSON.stringify(currentPhase)}`);
+        }
+        
         // Enforce turn order
         if (currentPlayerId && currentPlayerId !== userData.user.id) {
           throw new Error("Not your turn");
         }
-        if (currentPhase.type !== "tilePlacement") {
-          throw new Error(`Cannot place tile during ${currentPhase.type} phase.`);
-        }
+        
         handlerResult = handleTilePlacement(
           existingGameState,
           userData.user.id,
