@@ -57,18 +57,8 @@ export function handleChainFounding(
     },
   ];
 
-  // Draw tile
-  const drawn = dealTilesToPlayer(gameState, playerId, 1);
-  if (drawn.length > 0) {
-    events.push({
-      type: "TilesDrawn",
-      playerId,
-      count: drawn.length,
-      description: `Player drew ${drawn.length} tile(s)`,
-    });
-  }
-
   // Offer stock buying after chain formation
+  // Tile will be drawn AFTER stock buying is complete
   let nextPhase: GamePhase | null = null;
   const buyAction = buildBuyPendingAction(
     playerId,
@@ -77,6 +67,17 @@ export function handleChainFounding(
   );
   if (buyAction) {
     nextPhase = buyAction;
+  } else {
+    // No stock available to buy, draw tile now
+    const drawn = dealTilesToPlayer(gameState, playerId, 1);
+    if (drawn.length > 0) {
+      events.push({
+        type: "TilesDrawn",
+        playerId,
+        count: drawn.length,
+        description: `Player drew ${drawn.length} tile(s)`,
+      });
+    }
   }
 
   return {

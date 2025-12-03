@@ -220,20 +220,8 @@ export function handleTilePlacement(
     }
   }
 
-  // Draw tile if appropriate
-  if (shouldDraw) {
-    const drawn = dealTilesToPlayer(gameState, playerId, 1);
-    if (drawn.length > 0) {
-      events.push({
-        type: "TilesDrawn",
-        playerId,
-        count: drawn.length,
-        description: `Player drew ${drawn.length} tile(s)`,
-      });
-    }
-  }
-
-  // If no next phase set and tile was drawn, offer stock buying
+  // If no next phase set (no merger or chain formation), offer stock buying
+  // Tile will be drawn AFTER stock buying is complete
   if (!nextPhase && shouldDraw) {
     const player = players.find((p) => p.id === playerId);
     if (player) {
@@ -244,6 +232,17 @@ export function handleTilePlacement(
       );
       if (buyAction) {
         nextPhase = buyAction;
+      } else {
+        // No stock available to buy, draw tile now
+        const drawn = dealTilesToPlayer(gameState, playerId, 1);
+        if (drawn.length > 0) {
+          events.push({
+            type: "TilesDrawn",
+            playerId,
+            count: drawn.length,
+            description: `Player drew ${drawn.length} tile(s)`,
+          });
+        }
       }
     }
   }
