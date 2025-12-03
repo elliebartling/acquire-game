@@ -299,9 +299,22 @@ export function dealTilesToPlayer(
   if (!Array.isArray(player.hand)) {
     player.hand = [];
   }
+  
+  // Get hand size limit from config
+  const handSize = gameState.config?.handSize ?? DEFAULT_HAND_SIZE;
+  
+  // Calculate how many tiles we can actually add without exceeding hand size
+  const currentHandSize = player.hand.length;
+  const maxToAdd = Math.max(0, handSize - currentHandSize);
+  const tilesToAdd = Math.min(count, maxToAdd);
+  
+  if (tilesToAdd === 0) {
+    return []; // Hand is already full
+  }
+  
   const bag = Array.isArray(gameState.tileBag) ? gameState.tileBag : [];
   const drawn: string[] = [];
-  while (drawn.length < count && bag.length) {
+  while (drawn.length < tilesToAdd && bag.length) {
     const tile = bag.pop();
     if (!tile) break;
     player.hand.push(tile);
