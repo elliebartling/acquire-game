@@ -1,3 +1,5 @@
+import { GamePhase } from "./phases.ts";
+
 type BoardTiles = Record<string, unknown>;
 
 export type BoardConfig = {
@@ -28,6 +30,7 @@ export type GameStateRecord = {
   config?: BoardConfig;
   players?: PlayerStateRecord[];
   tileBag?: string[];
+  phase?: GamePhase;
   [key: string]: unknown;
 };
 
