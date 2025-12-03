@@ -166,3 +166,54 @@ export function tileWouldMergeSafe(
   return mergingChains.every((chain) => (chain.tiles?.length ?? 0) >= safeThreshold);
 }
 
+export function updatePublicChains(
+  publicChains: { id: string; name: string; size?: number; isSafe?: boolean; stockRemaining?: number }[] | undefined,
+  internalChains: ChainRecord[],
+) {
+  const fallback = internalChains.map((chain) => ({
+    id: chain.id,
+    name: chain.name,
+    size: (chain.tiles ?? []).length,
+    isSafe: false,
+    stockRemaining: chain.stockRemaining ?? 25,
+  }));
+  if (!publicChains || publicChains.length === 0) {
+    return fallback;
+  }
+  return publicChains.map((publicChain) => {
+    const internal = internalChains.find((chain) => chain.id === publicChain.id);
+    const size = internal ? (internal.tiles ?? []).length : publicChain.size ?? 0;
+    const stockRemaining = internal ? (internal.stockRemaining ?? 25) : publicChain.stockRemaining ?? 25;
+    return {
+      ...publicChain,
+      size,
+      stockRemaining,
+    };
+  });
+}
+
+export function discardBlockedTiles(
+  gameState: { players?: any[]; config?: { handSize?: number } } | null,
+  board: { width: number; height: number; tiles: Record<string, TileRecord> },
+  chains: ChainRecord[],
+  dealTilesToPlayerFn?: (gameState: any, playerId: string, count: number) => void,
+) {
+  if (!gameState || !Array.isArray(gameState.players)) return;
+  const handSize = gameState.config?.handSize ?? 6;
+  gameState.players.forEach((player: any) => {
+    if (!player || !Array.isArray(player.hand)) return;
+    player.hand = player.hand.filter(
+      (tile: string) => !tileWouldMergeSafe(tile, board, chains),
+    );
+  });
+  if (dealTilesToPlayerFn) {
+    gameState.players.forEach((player: any) => {
+      if (!player || !player.id || !Array.isArray(player.hand)) return;
+      const missing = handSize - player.hand.length;
+      if (missing > 0) {
+        dealTilesToPlayerFn(gameState, player.id, missing);
+      }
+    });
+  }
+}
+

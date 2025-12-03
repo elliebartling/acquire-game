@@ -1,6 +1,9 @@
 import { ChainRecord } from "./boardUtils.ts";
 import { PlayerStateRecord } from "./gameState.ts";
 
+// Re-export for convenience
+export type { ChainRecord } from "./boardUtils.ts";
+
 // Hotel chain pricing tiers based on official Acquire rules
 export const CHAIN_TIERS: Record<string, number> = {
   // Budget tier (Tier 0) - Tower, Luxor
@@ -167,5 +170,34 @@ export function calculateStockPrice(chainSize: number, chainName?: string | null
   
   // Fallback to base price if no chain name
   return basePrice;
+}
+
+/**
+ * Calculate the net worth of a player (cash + value of stocks)
+ * Stocks for chains not on the board (size = 0) have no value
+ */
+export function calculateNetWorth(
+  player: PlayerStateRecord,
+  chains: ChainRecord[]
+): number {
+  let netWorth = player.cash || 0;
+  
+  // Add value of all stocks
+  if (player.stocks && chains) {
+    Object.entries(player.stocks).forEach(([chainName, shares]) => {
+      if ((shares as number) > 0) {
+        // Find the chain to get its size
+        const chain = chains.find(c => c.name === chainName);
+        const chainSize = chain ? (chain.tiles?.length || 0) : 0;
+        if (chain && chainSize > 0) {
+          const price = calculateStockPrice(chainSize, chainName);
+          netWorth += price * (shares as number);
+        }
+        // If chain is not on board (size = 0), stock has no value
+      }
+    });
+  }
+  
+  return netWorth;
 }
 

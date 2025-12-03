@@ -1,4 +1,4 @@
-import { GamePhase, ChainOption } from "../phases.ts";
+import { GamePhase, ChainOption, DisposalQueue } from "../phases.ts";
 import { HandlerResult, GameEvent } from "../events.ts";
 import { GameStateRecord, PlayerStateRecord } from "../gameState.ts";
 import {
@@ -12,6 +12,9 @@ import {
   collectNeighborChains,
 } from "../boardUtils.ts";
 import { playerHasTile, consumeTileFromHand, dealTilesToPlayer } from "../gameState.ts";
+import { getPlayersInOrder } from "../gameLogic.ts";
+import { handleBonusPayout } from "./bonusPayout.ts";
+import { buildBuyPendingAction } from "./stockPurchase.ts";
 
 export function handleTilePlacement(
   gameState: GameStateRecord,
@@ -77,6 +80,24 @@ export function handleTilePlacement(
       const survivor = topChains[0];
       const mergingOthers = mergingChains.filter((chain) => chain?.id !== survivor?.id);
       
+      // Find largest defunct chain for bonuses
+      const largestDefunct = mergingOthers.length > 0
+        ? mergingOthers.reduce((largest, chain) => {
+            const size = chain.tiles?.length ?? 0;
+            const largestSize = largest ? (largest.tiles?.length ?? 0) : 0;
+            return size > largestSize ? chain : largest;
+          }, mergingOthers[0])
+        : null;
+
+      const defunctChainSize = largestDefunct ? (largestDefunct.tiles?.length ?? 0) : 0;
+
+      // Pay bonuses before merging
+      if (largestDefunct) {
+        const bonusResult = handleBonusPayout(gameState, largestDefunct, defunctChainSize);
+        events.push(...bonusResult.events);
+      }
+
+      // Merge chains
       assignConnectedClusterToChain(survivor?.id ?? "", tile, board, chains);
       mergingOthers.forEach((chain) => {
         if (!chain) return;
@@ -85,15 +106,52 @@ export function handleTilePlacement(
         chain.founderId = null;
       });
 
-      // This will trigger bonus payout and disposal phases
-      // For now, we'll handle this in the merger handler
-      // Just record the tile placement event
       events.push({
         type: "TilePlayed",
         playerId,
         tile,
         description: `Player placed tile ${tile}`,
       });
+
+      events.push({
+        type: "MergerResolved",
+        playerId,
+        survivorId: survivor?.id ?? "",
+        defunctChainIds: mergingOthers.map((c) => c.id),
+        description: `Merger resolved: ${mergingOthers.map((c) => c.name).join(", ")} merged into ${survivor?.name}`,
+      });
+
+      // Setup stock disposal if needed
+      if (largestDefunct) {
+        const playersWithStock = players.filter((p) => {
+          const shares = p.stocks?.[largestDefunct.name] ?? 0;
+          return shares > 0;
+        });
+
+        if (playersWithStock.length > 0) {
+          const turnOrder = gameState.turnOrder ?? [];
+          const disposalOrder = getPlayersInOrder(playerId, playersWithStock, turnOrder);
+          const firstPlayerId = disposalOrder[0];
+
+          const queue: DisposalQueue = {
+            defunctChainId: largestDefunct.id,
+            defunctChainName: largestDefunct.name,
+            defunctChainSize,
+            survivingChainId: survivor?.id ?? "",
+            survivingChainName: survivor?.name ?? "",
+            playerOrder: disposalOrder,
+            mergerMakerId: playerId,
+          };
+
+          nextPhase = {
+            type: "disposalLoop",
+            queue,
+            currentIndex: 0,
+            defunctChains: [],
+          };
+          shouldDraw = false;
+        }
+      }
     } else {
       // Multiple chains of same size - player must choose
       nextPhase = {
