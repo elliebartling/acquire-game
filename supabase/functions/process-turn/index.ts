@@ -121,14 +121,15 @@ serve(async (req: Request) => {
     const moveRecord = buildMoveRecord(move, userData.user.id);
     
     // Ensure board and chains exist in game state
-    existingGameState.board = ensureBoard(existingGameState.board, boardConfig);
-    existingGameState.chains = ensureChains(
+    const board = ensureBoard(existingGameState.board, boardConfig);
+    const chains = ensureChains(
       existingGameState.chains as ChainRecord[] | undefined,
       existingGameState.config?.chainNames ?? [],
     );
-
-    const board = existingGameState.board;
-    const chains = existingGameState.chains as ChainRecord[];
+    
+    // Update game state with ensured board and chains
+    existingGameState.board = board;
+    existingGameState.chains = chains;
 
     // Get current phase from game state, or migrate from legacy pendingAction
     let currentPhase: GamePhase | null = existingGameState.phase ?? null;
@@ -143,10 +144,8 @@ serve(async (req: Request) => {
       }
     }
     
-    // Initialize to tilePlacement if no phase exists
-    if (!currentPhase && currentPlayerId) {
-      currentPhase = { type: "tilePlacement", playerId: currentPlayerId };
-    }
+    // Initialize to tilePlacement if no phase exists (but don't set it yet - let handlers do it)
+    // This is just for validation purposes
 
     // Route to appropriate handler based on move type and phase
     let handlerResult;
@@ -161,10 +160,18 @@ serve(async (req: Request) => {
         if (currentPhase && currentPhase.type !== "tilePlacement") {
           throw new Error(`Cannot place tile during ${currentPhase.type} phase.`);
         }
+        // Ensure we have a tile value
+        if (!moveRecord.move_value) {
+          throw new Error("Missing tile value.");
+        }
+        // Ensure phase is set for tile placement
+        if (!currentPhase && currentPlayerId) {
+          currentPhase = { type: "tilePlacement", playerId: currentPlayerId };
+        }
         handlerResult = handleTilePlacement(
           existingGameState,
           userData.user.id,
-          moveRecord.move_value!,
+          moveRecord.move_value,
           currentPhase,
         );
       } else if (moveType === "start-chain") {
@@ -230,8 +237,13 @@ serve(async (req: Request) => {
         throw new Error(`Unknown move type: ${moveType}`);
       }
     } catch (handlerError: any) {
+      console.error("Handler error:", handlerError);
+      console.error("Error stack:", handlerError.stack);
       return new Response(
-        JSON.stringify({ error: handlerError.message || "Handler error" }),
+        JSON.stringify({ 
+          error: handlerError.message || "Handler error",
+          details: Deno.env.get("DENO_ENV") === "development" ? handlerError.stack : undefined
+        }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
