@@ -13,6 +13,7 @@ import {
 import { GAME_EVENTS, sendGameBroadcast } from "../_shared/broadcast.ts";
 import { GamePhase } from "../_shared/phases.ts";
 import { saveEvent } from "../_shared/eventStore.ts";
+import { migratePendingActionToPhase } from "../_shared/migratePendingAction.ts";
 import { handleTilePlacement } from "../_shared/handlers/tilePlacement.ts";
 import { handleChainFounding } from "../_shared/handlers/chainFounding.ts";
 import { handleMergerResolution } from "../_shared/handlers/mergerResolution.ts";
@@ -129,8 +130,20 @@ serve(async (req: Request) => {
     const board = existingGameState.board;
     const chains = existingGameState.chains as ChainRecord[];
 
-    // Get current phase from game state, or initialize to tilePlacement
+    // Get current phase from game state, or migrate from legacy pendingAction
     let currentPhase: GamePhase | null = existingGameState.phase ?? null;
+    
+    // Backward compatibility: migrate old pendingAction to phase
+    if (!currentPhase && (existingGameState as any).pendingAction) {
+      currentPhase = migratePendingActionToPhase((existingGameState as any).pendingAction);
+      // Update the game state with the migrated phase
+      if (currentPhase) {
+        existingGameState.phase = currentPhase;
+        delete (existingGameState as any).pendingAction;
+      }
+    }
+    
+    // Initialize to tilePlacement if no phase exists
     if (!currentPhase && currentPlayerId) {
       currentPhase = { type: "tilePlacement", playerId: currentPlayerId };
     }
@@ -146,7 +159,7 @@ serve(async (req: Request) => {
           throw new Error("Not your turn");
         }
         if (currentPhase && currentPhase.type !== "tilePlacement") {
-          throw new Error("Pending action must be resolved first.");
+          throw new Error(`Cannot place tile during ${currentPhase.type} phase.`);
         }
         handlerResult = handleTilePlacement(
           existingGameState,
