@@ -34,6 +34,16 @@ export type GamePhase =
       options: ChainOption[];
     }
   | {
+      type: "selectDefunctOrder";
+      playerId: string;
+      survivingChainId: string;
+      survivingChainName: string;
+      tile: string;
+      defunctOptions: DefunctChain[];
+      processedDefuncts: DefunctChain[];
+      remainingDefuncts: DefunctChain[];
+    }
+  | {
       type: "bonusPayout";
       defunctChainId: string;
       defunctChainName: string;

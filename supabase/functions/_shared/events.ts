@@ -66,6 +66,18 @@ export type GameEvent =
       playerId: string;
       count: number;
       description: string;
+    }
+  | {
+      type: "DefunctChainSelected";
+      playerId: string;
+      chainId: string;
+      chainName: string;
+      description: string;
+    }
+  | {
+      type: "TurnStarted";
+      playerId: string;
+      description: string;
     };
 
 export type HandlerResult = {

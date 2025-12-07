@@ -2,8 +2,115 @@ import { GamePhase, DisposalQueue } from "../phases.ts";
 import { HandlerResult, GameEvent, DisposalAction } from "../events.ts";
 import { GameStateRecord, PlayerStateRecord } from "../gameState.ts";
 import { ChainRecord } from "../boardUtils.ts";
-import { calculateStockPrice } from "../gameLogic.ts";
+import { calculateStockPrice, getPlayersInOrder } from "../gameLogic.ts";
 import { buildBuyPendingAction } from "./stockPurchase.ts";
+import { handleBonusPayout } from "./bonusPayout.ts";
+
+/**
+ * Helper function to process the next defunct chain after completing disposal for current chain.
+ * Returns the next phase (either another disposal loop, selection phase, stock buy, or null).
+ */
+function processNextDefunctChain(
+  currentPhase: GamePhase & { type: "disposalLoop" },
+  gameState: GameStateRecord,
+  chains: ChainRecord[],
+  events: GameEvent[]
+): GamePhase | null {
+  const players = gameState.players ?? [];
+  const turnOrder = gameState.turnOrder ?? [];
+  
+  // Check if there are more defunct chains to process
+  if (currentPhase.defunctChains && currentPhase.defunctChains.length > 0) {
+    // Check if we need player to choose order for equal-sized chains
+    const allDefuncts = currentPhase.defunctChains;
+    const maxSize = Math.max(...allDefuncts.map((d) => d.size));
+    const equalSizedChains = allDefuncts.filter((d) => d.size === maxSize);
+    const smallerChains = allDefuncts.filter((d) => d.size < maxSize);
+
+    if (equalSizedChains.length > 1) {
+      // Multiple chains of the same size - player must choose order
+      return {
+        type: "selectDefunctOrder",
+        playerId: currentPhase.queue.mergerMakerId,
+        survivingChainId: currentPhase.queue.survivingChainId,
+        survivingChainName: currentPhase.queue.survivingChainName,
+        tile: "", // tile not relevant at this point in disposal
+        defunctOptions: equalSizedChains,
+        processedDefuncts: [], // Already processed chains not tracked here
+        remainingDefuncts: smallerChains,
+      };
+    }
+
+    // Single largest chain - process it automatically
+    const nextDefunctInfo = equalSizedChains[0];
+    const nextDefunct = chains.find((c) => c.id === nextDefunctInfo.id);
+    
+    if (nextDefunct) {
+      // Pay bonuses for this defunct chain before disposal
+      const bonusResult = handleBonusPayout(gameState, nextDefunct, nextDefunctInfo.size);
+      events.push(...bonusResult.events);
+      
+      // Find players with stock in this defunct chain
+      const playersWithStock = players.filter((p) => {
+        const shares = p.stocks?.[nextDefunct.name] ?? 0;
+        return shares > 0;
+      });
+
+      if (playersWithStock.length > 0) {
+        // Set up disposal for this chain
+        const disposalOrder = getPlayersInOrder(
+          currentPhase.queue.mergerMakerId,
+          playersWithStock,
+          turnOrder
+        );
+
+        const queue: DisposalQueue = {
+          defunctChainId: nextDefunct.id,
+          defunctChainName: nextDefunct.name,
+          defunctChainSize: nextDefunctInfo.size,
+          survivingChainId: currentPhase.queue.survivingChainId,
+          survivingChainName: currentPhase.queue.survivingChainName,
+          playerOrder: disposalOrder,
+          mergerMakerId: currentPhase.queue.mergerMakerId,
+        };
+
+        // Remaining defunct chains after this one
+        const remainingDefunctChains = [...smallerChains];
+
+        return {
+          type: "disposalLoop",
+          queue,
+          currentIndex: 0,
+          defunctChains: remainingDefunctChains,
+        };
+      } else {
+        // No players have stock in this chain, recursively check next chain
+        const nextPhaseCheck: GamePhase = {
+          type: "disposalLoop",
+          queue: currentPhase.queue,
+          currentIndex: 0,
+          defunctChains: smallerChains,
+        };
+        return processNextDefunctChain(nextPhaseCheck, gameState, chains, events);
+      }
+    }
+  }
+  
+  // No more defunct chains to process, offer stock buying to merger maker
+  const mergerMaker = players.find((p) => p.id === currentPhase.queue.mergerMakerId);
+  if (mergerMaker) {
+    const buyAction = buildBuyPendingAction(
+      currentPhase.queue.mergerMakerId,
+      mergerMaker.cash ?? 0,
+      chains,
+    );
+    if (buyAction) {
+      return buyAction;
+    }
+  }
+  
+  return null;
+}
 
 export function handleStockDisposal(
   gameState: GameStateRecord,
@@ -162,33 +269,13 @@ export function handleStockDisposal(
         }
       }
       if (!foundNext) {
-        // All players have disposed, offer buy-stock to merger maker
-        const mergerMaker = players.find((p) => p.id === currentPhase.queue.mergerMakerId);
-        if (mergerMaker) {
-          const buyAction = buildBuyPendingAction(
-            currentPhase.queue.mergerMakerId,
-            mergerMaker.cash ?? 0,
-            chains,
-          );
-          if (buyAction) {
-            nextPhase = buyAction;
-          }
-        }
+        // All players in current disposal queue have disposed, check for more defunct chains
+        nextPhase = processNextDefunctChain(currentPhase, gameState, chains, events);
       }
     }
   } else {
-    // All players have disposed, offer buy-stock to merger maker
-    const mergerMaker = players.find((p) => p.id === currentPhase.queue.mergerMakerId);
-    if (mergerMaker) {
-      const buyAction = buildBuyPendingAction(
-        currentPhase.queue.mergerMakerId,
-        mergerMaker.cash ?? 0,
-        chains,
-      );
-      if (buyAction) {
-        nextPhase = buyAction;
-      }
-    }
+    // All players in current disposal queue have disposed, check for more defunct chains
+    nextPhase = processNextDefunctChain(currentPhase, gameState, chains, events);
   }
 
   return {

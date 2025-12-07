@@ -260,3 +260,27 @@ export function sortPlayersByTurnOrderTiles(
   return entries.map(([playerId]) => playerId);
 }
 
+/**
+ * Sort defunct chains by size (largest first) for merger processing.
+ * For chains of equal size, sort alphabetically by name for determinism.
+ * Returns array of defunct chain objects with id, name, and size.
+ */
+export function sortDefunctChainsBySize(
+  defunctChains: ChainRecord[]
+): Array<{ id: string; name: string; size: number }> {
+  return defunctChains
+    .map((chain) => ({
+      id: chain.id,
+      name: chain.name,
+      size: chain.tiles?.length ?? 0,
+    }))
+    .sort((a, b) => {
+      // Sort by size descending (largest first)
+      if (b.size !== a.size) {
+        return b.size - a.size;
+      }
+      // For ties, sort alphabetically by name
+      return a.name.localeCompare(b.name);
+    });
+}
+

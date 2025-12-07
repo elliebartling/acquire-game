@@ -17,6 +17,7 @@ import { migratePendingActionToPhase } from "../_shared/migratePendingAction.ts"
 import { handleTilePlacement } from "../_shared/handlers/tilePlacement.ts";
 import { handleChainFounding } from "../_shared/handlers/chainFounding.ts";
 import { handleMergerResolution } from "../_shared/handlers/mergerResolution.ts";
+import { handleDefunctChainSelection } from "../_shared/handlers/defunctChainSelection.ts";
 import { handleStockDisposal } from "../_shared/handlers/stockDisposal.ts";
 import { handleStockPurchase, buildBuyPendingAction } from "../_shared/handlers/stockPurchase.ts";
 import { handleTurnAdvancement } from "../_shared/handlers/turnAdvancement.ts";
@@ -179,14 +180,21 @@ serve(async (req: Request) => {
         if (!moveRecord.move_value) {
           throw new Error("Missing tile value.");
         }
+        
+        // Check if we're in a valid state for tile placement
+        if (currentPhase && currentPhase.type && currentPhase.type !== "tilePlacement") {
+          // We're in the middle of another phase (merger, disposal, etc.)
+          throw new Error(`Cannot play tile during ${currentPhase.type} phase. Complete the pending action first.`);
+        }
+        
         // Ensure phase is set for tile placement (use current player or the user making the move)
         const tilePlayerId = currentPlayerId || userData.user.id;
         
-        // Always ensure we have a valid tilePlacement phase
+        // Initialize tilePlacement phase if not set or invalid
         console.log("Before phase check - currentPhase:", JSON.stringify(currentPhase));
-        if (!currentPhase || typeof currentPhase !== 'object' || !currentPhase.type || currentPhase.type !== "tilePlacement") {
-          // If phase is invalid or not tilePlacement, initialize/reset it
-          console.log("Resetting phase to tilePlacement for player:", tilePlayerId);
+        if (!currentPhase || typeof currentPhase !== 'object' || !currentPhase.type) {
+          // Only reset if phase is null or invalid (not if it's a different valid phase)
+          console.log("Initializing tilePlacement phase for player:", tilePlayerId);
           currentPhase = { type: "tilePlacement", playerId: tilePlayerId };
           // Update game state immediately
           existingGameState.phase = currentPhase;
@@ -224,6 +232,16 @@ serve(async (req: Request) => {
           throw new Error("No merger to resolve.");
         }
         handlerResult = handleMergerResolution(
+          existingGameState,
+          userData.user.id,
+          move.chain_id ?? move.chainId ?? "",
+          currentPhase,
+        );
+      } else if (moveType === "select-defunct-order") {
+        if (currentPhase?.type !== "selectDefunctOrder") {
+          throw new Error("No defunct chain selection pending.");
+        }
+        handlerResult = handleDefunctChainSelection(
           existingGameState,
           userData.user.id,
           move.chain_id ?? move.chainId ?? "",
