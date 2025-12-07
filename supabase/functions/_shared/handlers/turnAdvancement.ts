@@ -1,6 +1,6 @@
 import { GamePhase } from "../phases.ts";
 import { HandlerResult, GameEvent } from "../events.ts";
-import { GameStateRecord } from "../gameState.ts";
+import { GameStateRecord, PlayerStateRecord } from "../gameState.ts";
 import { advanceTurn, getCurrentPlayerId } from "../turns.ts";
 import { dealTilesToPlayer } from "../gameState.ts";
 
@@ -31,6 +31,17 @@ export function handleTurnAdvancement(
         description: `Player drew ${drawn.length} tile(s)`,
       });
     }
+    
+    // Get the player's username from game state
+    const player = (updatedState.players || []).find((p: PlayerStateRecord) => p.id === nextPlayerId);
+    const playerName = player?.username || nextPlayerId;
+    
+    // Add "It's your turn" event
+    events.push({
+      type: "TurnStarted",
+      playerId: nextPlayerId,
+      description: `It's ${playerName}'s turn`,
+    });
   }
 
   const nextPhase: GamePhase | null = nextPlayerId

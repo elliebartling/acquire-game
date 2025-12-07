@@ -42,6 +42,16 @@ const currentGame = computed(() => gamesStore.gameById(gameId.value))
 const currentUsername = computed(() => authStore.user?.profile?.username || '')
 const currentUserId = computed(() => authStore.user?.id)
 
+const gameStatus = computed(() => currentGame.value?.status || 'waiting')
+const isWaiting = computed(() => gameStatus.value === 'waiting')
+const isActive = computed(() => gameStatus.value === 'active')
+const canStart = computed(() => {
+  if (!currentGame.value || !isWaiting.value) return false
+  const playerCount = currentGame.value.players?.length || 0
+  const requiredSeats = currentGame.value.number_of_seats || 0
+  return playerCount === requiredSeats
+})
+
 const usernameMap = computed(() => {
   const map = {}
   if (publicState.value?.players) {
@@ -129,7 +139,9 @@ function formatMoveAction(moveType, disposalActions = null) {
     'start-chain': 'started',
     'dispose-stock': 'disposed',
     'complete-buy': 'completed purchase',
-    'resolve-merger': 'resolved merger'
+    'resolve-merger': 'resolved merger',
+    'turn-order-determined': '🎯',
+    'turn-started': '👉'
   }
   return actionMap[moveType] || moveType.replace('-', ' ')
 }
@@ -137,9 +149,19 @@ function formatMoveAction(moveType, disposalActions = null) {
 function extractMoveDetails(move) {
   const details = []
   
-  // Extract tile information
+  // Extract tile information for regular tiles
   if (move.move_type === 'tile' && move.move_value) {
     details.push({ type: 'tile', value: move.move_value, index: 0 })
+  }
+  
+  // Turn order determined - don't show details, description is enough
+  if (move.move_type === 'turn-order-determined') {
+    return details
+  }
+  
+  // Turn started - don't show details
+  if (move.move_type === 'turn-started') {
+    return details
   }
   
   // Handle dispose-stock moves with multiple actions
@@ -290,6 +312,15 @@ function chainClasses(name) {
   return getChainButtonClass(name)
 }
 
+async function handleStartGame() {
+  if (!gameId.value) return
+  try {
+    await gameStore.startGame(gameId.value)
+  } catch (err) {
+    console.error('Failed to start game:', err)
+  }
+}
+
 onMounted(async () => {
   await playersStore.loadAllPlayers()
   const game = await gamesStore.getCurrentGame(gameId.value)
@@ -368,7 +399,37 @@ watch(
         </div>
     </header>
     <main v-if="publicState" class="container mx-auto relative -top-6 px-3 py-3 max-w-[1600px]">
-        <div id="grid" class="grid gap-3 grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_1fr]">
+        <!-- Waiting for game to start overlay -->
+        <div v-if="isWaiting" class="card p-8 mb-6 text-center">
+            <div class="max-w-md mx-auto">
+                <h2 class="text-2xl font-bold text-gray-900 mb-3">
+                    {{ canStart ? 'Ready to Start' : 'Waiting for Players' }}
+                </h2>
+                <p v-if="!canStart" class="text-gray-600 mb-6">
+                    Waiting for {{ (currentGame?.number_of_seats || 0) - (currentGame?.players?.length || 0) }} more 
+                    {{ ((currentGame?.number_of_seats || 0) - (currentGame?.players?.length || 0)) === 1 ? 'player' : 'players' }} 
+                    to join...
+                </p>
+                <p v-else class="text-gray-600 mb-4">
+                    All players have joined! Someone needs to start the game to determine turn order.
+                </p>
+                <div class="flex items-center justify-center gap-2 mb-6">
+                    <span class="text-lg font-semibold text-gray-900">
+                        {{ currentGame?.players?.length || 0 }} / {{ currentGame?.number_of_seats || 0 }}
+                    </span>
+                    <span class="text-gray-500">players</span>
+                </div>
+                <button
+                    v-if="canStart"
+                    @click="handleStartGame"
+                    :disabled="gameStore.loading"
+                    class="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-md transition-colors"
+                >
+                    {{ gameStore.loading ? 'Starting...' : 'Start Game' }}
+                </button>
+            </div>
+        </div>
+        <div id="grid" class="grid gap-3 grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_1fr]" :class="{ 'opacity-50 pointer-events-none': isWaiting }">
             <div class="col-span-1 lg:col-span-6 w-full order-1 lg:order-1 flex flex-col gap-3">
                 <Scoreboard 
                   :players="publicState.players"
@@ -473,7 +534,13 @@ watch(
                     <div class="flow-root overflow-y-auto flex-1">
                         <ul v-if="moves.length > 0" role="list" class="divide-y divide-gray-200">
                             <li v-for="(move, index) in moves" :key="move.created_at || move.move_value || index" class="py-2.5">
-                                <div class="text-sm text-gray-700 flex items-center gap-1.5 flex-wrap">
+                                <!-- System messages (turn order, turn started) -->
+                                <div v-if="move.move_type === 'turn-order-determined' || move.move_type === 'turn-started'" class="text-sm text-gray-700 flex items-center gap-1.5 flex-wrap">
+                                    <span>{{ formatMove(move).action }}</span>
+                                    <span>{{ move.description }}</span>
+                                </div>
+                                <!-- Regular moves -->
+                                <div v-else class="text-sm text-gray-700 flex items-center gap-1.5 flex-wrap">
                                     <span class="font-semibold text-gray-900">{{ usernameFor(move.player) }}</span>
                                     <span>{{ formatMove(move).action }}</span>
                                     <template v-for="(detail, detailIndex) in formatMove(move).details" :key="detailIndex">
@@ -520,6 +587,11 @@ watch(
                                       <span v-else-if="detail.type === 'chain'"
                                             class="inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-semibold text-white shadow-sm"
                                             :class="getChainButtonClass(detail.value)">
+                                        {{ detail.value }}
+                                      </span>
+                                      
+                                      <!-- Text detail (for turn order, etc) -->
+                                      <span v-else-if="detail.type === 'text'" class="text-gray-600">
                                         {{ detail.value }}
                                       </span>
                                     </template>

@@ -82,7 +82,7 @@ serve(async (req: Request) => {
     });
     const { data, error } = await adminClient
       .from("games")
-      .select("players, moves, public_state, game_state, board_config")
+      .select("players, moves, public_state, game_state, board_config, status")
       .eq("id", game_id)
       .single();
     if (error || !data) {
@@ -98,6 +98,14 @@ serve(async (req: Request) => {
       return new Response(
         JSON.stringify({ error: "Only participants can submit moves" }),
         { status: 403, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Verify game has started
+    if (data.status !== "active") {
+      return new Response(
+        JSON.stringify({ error: "Game has not started yet" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
 

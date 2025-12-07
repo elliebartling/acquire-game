@@ -83,6 +83,19 @@ function transformMoveToUIFormat(dbMove) {
           move_type: 'tiles-drawn'
         }
 
+      case 'TurnOrderDetermined':
+        return {
+          ...baseMove,
+          move_type: 'turn-order-determined',
+          turn_order: event.turnOrder
+        }
+
+      case 'TurnStarted':
+        return {
+          ...baseMove,
+          move_type: 'turn-started'
+        }
+
       default:
         // If event type doesn't match, try to convert the move_type from event type format
         // to UI format (e.g., "TilePlayed" -> "tile")
@@ -117,7 +130,9 @@ function convertEventTypeToMoveType(eventType) {
     'MergerResolved': 'resolve-merger',
     'BonusesPaid': 'bonuses-paid',
     'TurnAdvanced': 'turn-advanced',
-    'TilesDrawn': 'tiles-drawn'
+    'TilesDrawn': 'tiles-drawn',
+    'TurnOrderDetermined': 'turn-order-determined',
+    'TurnStarted': 'turn-started'
   }
   return typeMap[eventType] || eventType.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase()
 }
@@ -494,6 +509,49 @@ export const useGameStore = defineStore({
         }
       })
       await this.refreshGameState()
+    },
+    async startGame(gameId) {
+      if (!gameId) {
+        gameId = this.gameId
+      }
+      if (!gameId) {
+        throw new Error('No game ID provided')
+      }
+      
+      this.loading = true
+      this.error = null
+      
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const token = session?.access_token
+        
+        const { data, error } = await supabase.functions.invoke('start-game', {
+          body: JSON.stringify({ game_id: gameId }),
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          }
+        })
+        
+        if (error) {
+          console.error('Failed to start game:', error)
+          this.error = error
+          throw error
+        }
+        
+        console.log('Game started successfully:', data)
+        
+        // Refresh game state to get updated status and turn order
+        await this.refreshGameState()
+        
+        this.loading = false
+        return data
+      } catch (err) {
+        console.error('Error starting game:', err)
+        this.error = err
+        this.loading = false
+        throw err
+      }
     },
     teardown() {
       if (this.subscription) {

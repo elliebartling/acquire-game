@@ -48,19 +48,37 @@
               return !(this.game.players.length < this.game.number_of_seats)
             },
             phaseLabel() {
+              // Show game status if available, otherwise show phase
+              if (this.game.status === 'waiting') {
+                return 'waiting'
+              }
+              if (this.game.status === 'active') {
+                return 'active'
+              }
+              if (this.game.status === 'completed') {
+                return 'completed'
+              }
+              // Fallback to phase or status
               return this.game.public_state?.phase || this.game.status || 'waiting'
             },
             phaseBadgeClass() {
-              if (this.phaseLabel === 'setup') {
+              if (this.phaseLabel === 'waiting') {
                 return 'bg-amber-100 text-amber-800 border-amber-200'
               }
               if (this.phaseLabel === 'active') {
                 return 'bg-emerald-100 text-emerald-800 border-emerald-200'
               }
+              if (this.phaseLabel === 'completed') {
+                return 'bg-gray-100 text-gray-800 border-gray-200'
+              }
               return 'bg-sky-100 text-sky-800 border-sky-200'
             },
             statusLabel() {
-              return this.game.status ? this.game.status.replace('-', ' ') : ''
+              // Don't show redundant status label if it matches phase label
+              if (this.game.status && this.game.status !== this.phaseLabel) {
+                return this.game.status.replace('-', ' ')
+              }
+              return ''
             }
         }
     }

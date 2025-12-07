@@ -206,3 +206,57 @@ export function calculateNetWorth(
   return netWorth;
 }
 
+/**
+ * Parse a tile coordinate string (e.g., "3-B") into numeric row and column.
+ * Returns { row, col } where row is 0-8 (A-I) and col is 1-12.
+ */
+export function parseTileCoordinate(tile: string): { row: number; col: number } {
+  const parts = tile.split('-');
+  if (parts.length !== 2) {
+    throw new Error(`Invalid tile format: ${tile}`);
+  }
+  
+  const col = parseInt(parts[0], 10);
+  const rowLetter = parts[1].toUpperCase();
+  const row = rowLetter.charCodeAt(0) - 'A'.charCodeAt(0);
+  
+  if (isNaN(col) || col < 1 || col > 12) {
+    throw new Error(`Invalid column in tile: ${tile}`);
+  }
+  if (row < 0 || row > 8) {
+    throw new Error(`Invalid row in tile: ${tile}`);
+  }
+  
+  return { row, col };
+}
+
+/**
+ * Compare two tiles for turn order determination.
+ * Returns negative if tile1 < tile2, positive if tile1 > tile2, 0 if equal.
+ * Comparison is row-first (A < B < ... < I), then column (1 < 2 < ... < 12).
+ */
+export function compareTiles(tile1: string, tile2: string): number {
+  const coord1 = parseTileCoordinate(tile1);
+  const coord2 = parseTileCoordinate(tile2);
+  
+  // Compare row first
+  if (coord1.row !== coord2.row) {
+    return coord1.row - coord2.row;
+  }
+  
+  // If rows are equal, compare column
+  return coord1.col - coord2.col;
+}
+
+/**
+ * Sort players by their drawn tiles to determine turn order.
+ * Returns array of player IDs sorted by tile coordinate (lowest tile goes first).
+ */
+export function sortPlayersByTurnOrderTiles(
+  turnOrderTiles: Record<string, string>
+): string[] {
+  const entries = Object.entries(turnOrderTiles);
+  entries.sort((a, b) => compareTiles(a[1], b[1]));
+  return entries.map(([playerId]) => playerId);
+}
+
