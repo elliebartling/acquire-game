@@ -25,7 +25,11 @@ const gameId = computed(() => route.params.id)
 
 const publicState = computed(() => gameStore.publicState)
 const playerView = computed(() => gameStore.playerView)
-const moves = computed(() => publicState.value?.moves || [])
+const moves = computed(() => {
+  const storeMoves = gameStore.moves || []
+  // Reverse to show newest first (most recent at top)
+  return [...storeMoves].reverse()
+})
 // Only show phase if it's for this player (playerView already filters this)
 const phase = computed(() => playerView.value?.phase || null)
 const handTileHints = computed(() =>
@@ -87,23 +91,6 @@ function formatMove(move) {
   const disposalActions = move.disposal_actions || (move.disposal_action ? [move.disposal_action] : null)
   const action = formatMoveAction(move.move_type, disposalActions)
   const details = extractMoveDetails(move)
-  
-  // Debug: log move structure for first few moves
-  if (process.env.NODE_ENV === 'development') {
-    const moveIndex = moves.value.findIndex(m => m === move || (m.created_at === move.created_at && m.player === move.player))
-    if (moveIndex >= 0 && moveIndex < 3) {
-      console.log(`Move ${moveIndex}:`, {
-        move_type: move.move_type,
-        move_value: move.move_value,
-        chain_name: move.chain_name,
-        shares: move.shares,
-        disposal_action: move.disposal_action,
-        disposal_actions: move.disposal_actions,
-        surviving_chain_name: move.surviving_chain_name,
-        extracted_details: details
-      })
-    }
-  }
   
   return { action, details, move }
 }
@@ -212,12 +199,12 @@ function extractMoveDetails(move) {
     }
   }
   
-  // For start-chain and resolve-merger, chain_name should be set
-  // For purchase, try to find chain from move_value or context
+  // For start-chain, purchase, and resolve-merger, show the chain name
+  // start-chain should always have chain_name set
   if (chainName) {
     details.push({ type: 'chain', value: chainName, index: 2 })
   } else if (move.move_type === 'purchase' && move.move_value) {
-    // Last resort: check if move_value looks like a chain name
+    // Last resort for purchases: check if move_value looks like a chain name
     const knownChains = ['Luxor', 'Tower', 'American', 'Festival', 'Worldwide', 'Continental', 'Imperial']
     if (knownChains.includes(move.move_value)) {
       details.push({ type: 'chain', value: move.move_value, index: 2 })
@@ -425,6 +412,28 @@ watch(
                       @dispose="handleStockDisposal"
                     />
                   </div>
+                  
+                  <div
+                    v-if="phase?.type === 'foundChain'"
+                    class="mt-3 pt-3 border-t border-gray-200"
+                  >
+                    <h3 class="mb-2 text-xs font-semibold text-gray-900">Form a hotel</h3>
+                    <p class="text-xs text-gray-600 mb-2">
+                      Choose a chain for tiles
+                      <span class="font-medium text-gray-900">{{ phase.tiles.join(', ') }}</span>
+                    </p>
+                    <div class="flex flex-wrap gap-1.5">
+                      <button
+                        v-for="option in phase.options"
+                        :key="option.id"
+                        class="px-3 py-1.5 rounded font-semibold text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                        :class="chainClasses(option.name)"
+                        @click="handleChainSelection(option)"
+                      >
+                        {{ option.name }}
+                      </button>
+                    </div>
+                  </div>
                 </div>
             </div>
             <div id="board" class="card col-span-1 lg:col-span-6 w-full pt-4 order-0 lg:order-0 lg:row-span-2">
@@ -437,27 +446,6 @@ watch(
                     :tile-hints="handTileHints"
                     @play-tile="playTile"
                 />
-                <div
-                  v-if="phase?.type === 'foundChain'"
-                  class="mt-4 border-t border-gray-100 pt-3"
-                >
-                  <h3 class="mb-2 text-xs font-semibold text-gray-900">Form a hotel</h3>
-                  <p class="text-xs text-gray-600 mb-2">
-                    Choose a chain for tiles
-                    <span class="font-medium text-gray-900">{{ phase.tiles.join(', ') }}</span>
-                  </p>
-                  <div class="flex flex-wrap gap-1.5">
-                    <button
-                      v-for="option in phase.options"
-                      :key="option.id"
-                      class="px-3 py-1.5 rounded font-semibold text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                      :class="chainClasses(option.name)"
-                      @click="handleChainSelection(option)"
-                    >
-                      {{ option.name }}
-                    </button>
-                  </div>
-                </div>
                 <div
                   v-if="phase?.type === 'mergerChoice'"
                   class="mt-4 border-t border-gray-100 pt-3"
@@ -483,7 +471,7 @@ watch(
                   <div id="moves" class="flex flex-col max-h-[600px]">
                     <h2 class="mt-3 mb-3 text-base font-semibold text-gray-900">Moves</h2>
                     <div class="flow-root overflow-y-auto flex-1">
-                        <ul role="list" class="divide-y divide-gray-200">
+                        <ul v-if="moves.length > 0" role="list" class="divide-y divide-gray-200">
                             <li v-for="(move, index) in moves" :key="move.created_at || move.move_value || index" class="py-2.5">
                                 <div class="text-sm text-gray-700 flex items-center gap-1.5 flex-wrap">
                                     <span class="font-semibold text-gray-900">{{ usernameFor(move.player) }}</span>
@@ -538,6 +526,9 @@ watch(
                                 </div>
                             </li>
                         </ul>
+                        <div v-else class="text-sm text-gray-500 py-4 text-center">
+                            No moves yet. Moves will appear here as the game progresses.
+                        </div>
                     </div>
                   </div>
                 </div>

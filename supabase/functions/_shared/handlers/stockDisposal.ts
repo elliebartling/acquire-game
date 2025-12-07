@@ -31,6 +31,11 @@ export function handleStockDisposal(
     throw new Error("Surviving chain not found.");
   }
 
+  const defunctChain = chains.find((c) => c.id === currentPhase.queue.defunctChainId);
+  if (!defunctChain) {
+    throw new Error("Defunct chain not found.");
+  }
+
   const playerShares = player.stocks?.[currentPhase.queue.defunctChainName] ?? 0;
 
   // Validate disposal actions
@@ -67,6 +72,9 @@ export function handleStockDisposal(
   player.stocks = player.stocks ?? {};
   let remainingShares = playerShares;
   const disposalActions: DisposalAction[] = [];
+  
+  // Track total shares being returned to the bank (sold + traded)
+  let totalSharesReturnedToBank = 0;
 
   for (const actionItem of actions) {
     const action = actionItem.action as string;
@@ -77,19 +85,28 @@ export function handleStockDisposal(
       const total = price * shares;
       player.cash = (player.cash ?? 0) + total;
       remainingShares -= shares;
+      totalSharesReturnedToBank += shares; // Sold shares return to the bank
       disposalActions.push({ action: "sell", shares });
     } else if (action === "trade") {
       const receiving = shares / 2;
       player.stocks[currentPhase.queue.survivingChainName] = (player.stocks[currentPhase.queue.survivingChainName] ?? 0) + receiving;
       survivingChain.stockRemaining = (survivingChain.stockRemaining ?? 0) - receiving;
       remainingShares -= shares;
+      totalSharesReturnedToBank += shares; // Traded shares return to the bank
       disposalActions.push({ action: "trade", shares });
     } else if (action === "hold") {
       disposalActions.push({ action: "hold", shares });
+      // Held shares stay with the player and do NOT return to the bank
     }
   }
 
   player.stocks[currentPhase.queue.defunctChainName] = remainingShares;
+  
+  // Return disposed shares (sold or traded) to the bank by increasing defunct chain's stockRemaining
+  // Held shares remain with the player and do not affect the bank's available shares
+  if (totalSharesReturnedToBank > 0) {
+    defunctChain.stockRemaining = (defunctChain.stockRemaining ?? 0) + totalSharesReturnedToBank;
+  }
 
   // Generate description
   const actionDescriptions: string[] = [];

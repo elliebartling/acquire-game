@@ -4,6 +4,124 @@ import { GameStateSerializer } from '@/game/persistence/GameStateSerializer'
 import { MoveHistory } from '@/game/persistence/MoveHistory'
 import { GAME_CHANNEL_TOPIC, GAME_EVENTS } from '@/game/realtime'
 
+/**
+ * Transform a database move record (with event_data) into the format expected by the UI
+ */
+function transformMoveToUIFormat(dbMove) {
+  const baseMove = {
+    id: dbMove.id,
+    player: dbMove.player,
+    move_type: dbMove.move_type,
+    move_value: dbMove.move_value,
+    created_at: dbMove.created_at,
+    description: dbMove.description
+  }
+
+  // If we have event_data, extract fields from it and map event types to UI move types
+  if (dbMove.event_data) {
+    const event = dbMove.event_data
+
+    switch (event.type) {
+      case 'TilePlayed':
+        return {
+          ...baseMove,
+          move_type: 'tile',
+          move_value: event.tile
+        }
+
+      case 'StockPurchased':
+        return {
+          ...baseMove,
+          move_type: 'purchase',
+          chain_name: event.chainName,
+          shares: event.shares
+        }
+
+      case 'StockDisposed':
+        return {
+          ...baseMove,
+          move_type: 'dispose-stock',
+          chain_name: event.defunctChainName,
+          disposal_actions: event.actions
+          // Note: surviving_chain_name might need to be extracted from phase_after if available
+        }
+
+      case 'ChainStarted':
+        return {
+          ...baseMove,
+          move_type: 'start-chain',
+          chain_name: event.chainName
+        }
+
+      case 'MergerResolved':
+        // For merger resolution, we might need to get chain names from chains
+        // For now, use the description or try to extract from event
+        return {
+          ...baseMove,
+          move_type: 'resolve-merger'
+        }
+
+      case 'BonusesPaid':
+        // Bonuses are typically not shown as separate moves in the UI
+        // But we can include them if needed
+        return {
+          ...baseMove,
+          move_type: 'bonuses-paid',
+          chain_name: event.defunctChainName
+        }
+
+      case 'TurnAdvanced':
+        // Turn advancement might not be shown as a move
+        return {
+          ...baseMove,
+          move_type: 'turn-advanced'
+        }
+
+      case 'TilesDrawn':
+        return {
+          ...baseMove,
+          move_type: 'tiles-drawn'
+        }
+
+      default:
+        // If event type doesn't match, try to convert the move_type from event type format
+        // to UI format (e.g., "TilePlayed" -> "tile")
+        const convertedMoveType = convertEventTypeToMoveType(event.type || dbMove.move_type)
+        return {
+          ...baseMove,
+          move_type: convertedMoveType
+        }
+    }
+  }
+
+  // Fallback: convert move_type if it's in event type format (has capital letters)
+  if (dbMove.move_type && /[A-Z]/.test(dbMove.move_type)) {
+    return {
+      ...baseMove,
+      move_type: convertEventTypeToMoveType(dbMove.move_type)
+    }
+  }
+
+  return baseMove
+}
+
+/**
+ * Convert event type (e.g., "TilePlayed") to UI move type (e.g., "tile")
+ */
+function convertEventTypeToMoveType(eventType) {
+  const typeMap = {
+    'TilePlayed': 'tile',
+    'StockPurchased': 'purchase',
+    'StockDisposed': 'dispose-stock',
+    'ChainStarted': 'start-chain',
+    'MergerResolved': 'resolve-merger',
+    'BonusesPaid': 'bonuses-paid',
+    'TurnAdvanced': 'turn-advanced',
+    'TilesDrawn': 'tiles-drawn'
+  }
+  return typeMap[eventType] || eventType.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase()
+}
+
 export const useGameStore = defineStore({
   id: 'game',
   state: () => ({
@@ -17,8 +135,10 @@ export const useGameStore = defineStore({
     serializer: new GameStateSerializer(),
     subscription: null,
     broadcastChannel: null,
+    movesChannel: null,
     playerId: null,
-    realtimeLogs: []
+    realtimeLogs: [],
+    moves: []
   }),
   getters: {
     board(state) {
@@ -40,9 +160,11 @@ export const useGameStore = defineStore({
       try {
         const payload = await this.fetchGameState(gameId, playerId)
         this.applyPayload(payload, playerId)
+        await this.fetchMoves(gameId)
         this.loading = false
         this.subscribeToGame(gameId, playerId)
         this.subscribeToBroadcastChannel(gameId, playerId)
+        this.subscribeToMoves(gameId)
       } catch (err) {
         console.error(err)
         this.error = err
@@ -56,6 +178,49 @@ export const useGameStore = defineStore({
       })
       if (error) throw error
       return data
+    },
+    async fetchMoves(gameId) {
+      if (!gameId) {
+        console.warn('[fetchMoves] No gameId provided')
+        return
+      }
+      console.log(`[fetchMoves] Fetching moves for game ${gameId}`)
+      try {
+        // First try with event_data (new schema)
+        let { data: moves, error } = await supabase
+          .from('moves')
+          .select('id, player, move_type, move_value, event_data, description, created_at')
+          .eq('game_id', gameId)
+          .order('created_at', { ascending: true }) // Oldest first for display
+
+        // If that fails because event_data doesn't exist, try without it
+        if (error && (error.code === '42703' || error.message?.includes('event_data') || error.message?.includes('does not exist'))) {
+          console.log('[fetchMoves] event_data column not available, fetching moves without it')
+          const result = await supabase
+            .from('moves')
+            .select('id, player, move_type, move_value, description, created_at')
+            .eq('game_id', gameId)
+            .order('created_at', { ascending: true })
+          moves = result.data
+          error = result.error
+        }
+
+        if (error) {
+          console.error('[fetchMoves] Failed to fetch moves:', error)
+          this.moves = []
+          return
+        }
+
+        console.log(`[fetchMoves] Fetched ${moves?.length || 0} moves for game ${gameId}`, moves)
+
+        // Transform moves to UI format
+        this.moves = (moves || []).map(transformMoveToUIFormat)
+        
+        console.log(`[fetchMoves] Transformed ${this.moves.length} moves`, this.moves)
+      } catch (err) {
+        console.error('[fetchMoves] Error fetching moves:', err)
+        this.moves = []
+      }
     },
     applyPayload(payload, playerId) {
       if (!payload) return
@@ -89,6 +254,7 @@ export const useGameStore = defineStore({
             this.logRealtimeEvent('postgres', { type: 'UPDATE', gameId, payload })
             const gamePayload = await this.fetchGameState(gameId, playerId)
             this.applyPayload(gamePayload, playerId)
+            // Don't refetch moves here - let the realtime subscription handle new moves
           } catch (err) {
             console.error(err)
             this.error = err
@@ -150,6 +316,76 @@ export const useGameStore = defineStore({
           console.log('Broadcast channel subscription status:', status)
           if (status === 'SUBSCRIBED') {
             this.logRealtimeEvent('broadcast', { message: 'Subscribed to channel', channelName })
+          }
+        })
+    },
+    subscribeToMoves(gameId) {
+      if (!supabase || typeof supabase.channel !== 'function') {
+        console.error('Supabase client does not support channels.')
+        return
+      }
+
+      if (this.movesChannel) {
+        supabase.removeChannel(this.movesChannel)
+        this.movesChannel = null
+      }
+
+      const channelName = `moves-${gameId}`
+      console.log(`[subscribeToMoves] Creating channel: ${channelName} for game ${gameId}`)
+      
+      // Listen to all INSERTs and filter in JavaScript (like games store does)
+      // This avoids potential issues with UUID filter syntax
+      this.movesChannel = supabase
+        .channel(channelName)
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'moves'
+        }, (payload) => {
+          console.log('[subscribeToMoves] Received INSERT event:', payload)
+          try {
+            if (!payload.new) {
+              console.warn('[subscribeToMoves] payload.new is missing', payload)
+              return
+            }
+            
+            // Filter by game_id in JavaScript (more reliable than DB filter for UUIDs)
+            if (payload.new.game_id !== gameId) {
+              console.log(`[subscribeToMoves] Ignoring move for different game: ${payload.new.game_id} !== ${gameId}`)
+              return
+            }
+            
+            // Check if move already exists (prevent duplicates)
+            const existingMove = this.moves.find(m => m.id === payload.new.id)
+            if (existingMove) {
+              console.log(`[subscribeToMoves] Move ${payload.new.id} already exists, skipping`)
+              return
+            }
+            
+            console.log('[subscribeToMoves] Processing new move for this game:', payload.new)
+            const newMove = transformMoveToUIFormat(payload.new)
+            console.log('[subscribeToMoves] Transformed move:', newMove)
+            
+            // Add to moves array (keep sorted by created_at ascending)
+            this.moves = [...this.moves, newMove].sort((a, b) => {
+              return new Date(a.created_at) - new Date(b.created_at)
+            })
+            console.log(`[subscribeToMoves] Updated moves array, now has ${this.moves.length} moves`)
+            this.logRealtimeEvent('postgres', { type: 'INSERT', table: 'moves', move: newMove })
+          } catch (err) {
+            console.error('[subscribeToMoves] Error processing new move:', err, payload)
+          }
+        })
+        .subscribe((status) => {
+          console.log('[subscribeToMoves] Channel subscription status:', status)
+          if (status === 'SUBSCRIBED') {
+            console.log('[subscribeToMoves] Successfully subscribed to moves table for game', gameId)
+          } else if (status === 'CHANNEL_ERROR') {
+            console.error('[subscribeToMoves] Channel subscription error, status:', status)
+          } else if (status === 'TIMED_OUT') {
+            console.error('[subscribeToMoves] Channel subscription timed out')
+          } else if (status === 'CLOSED') {
+            console.warn('[subscribeToMoves] Channel subscription closed')
           }
         })
     },
@@ -267,6 +503,10 @@ export const useGameStore = defineStore({
       if (this.broadcastChannel) {
         supabase.removeChannel(this.broadcastChannel)
         this.broadcastChannel = null
+      }
+      if (this.movesChannel) {
+        supabase.removeChannel(this.movesChannel)
+        this.movesChannel = null
       }
       this.$reset()
     }

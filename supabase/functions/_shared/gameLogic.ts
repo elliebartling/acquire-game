@@ -117,6 +117,11 @@ export function payMergerBonuses(
   // Pay majority bonus(es)
   if (majorityHolders.length === 1) {
     majorityHolders[0].player.cash = (majorityHolders[0].player.cash ?? 0) + bonuses.majority;
+    
+    // If this is the ONLY shareholder, also give them the minority bonus
+    if (shareholders.length === 1) {
+      majorityHolders[0].player.cash = (majorityHolders[0].player.cash ?? 0) + bonuses.minority;
+    }
   } else if (majorityHolders.length > 1) {
     // Tie: combine bonuses and divide equally
     const totalBonus = bonuses.majority + bonuses.minority;
@@ -127,7 +132,7 @@ export function payMergerBonuses(
   }
 
   // Pay minority bonus(es) if there are non-majority holders
-  if (minorityHolders.length > 0 && majorityHolders.length === 1) {
+  if (minorityHolders.length > 0 && majorityHolders.length === 1 && shareholders.length > 1) {
     const secondMaxShares = minorityHolders[0].shares;
     const secondHolders = minorityHolders.filter(s => s.shares === secondMaxShares);
     
